@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NWS Tornado Count Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c10;
+    --bg2: #111419;
+    --bg3: #181c23;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --red: #e83b3b;
+    --red-dim: rgba(232,59,59,0.15);
+    --red-glow: rgba(232,59,59,0.25);
+    --amber: #f5a623;
+    --amber-dim: rgba(245,166,35,0.12);
+    --text: #e8eaf0;
+    --text2: #8c90a0;
+    --text3: #555c6e;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Syne', sans-serif;
+    --green: #30d158;
+    --green-dim: rgba(48,209,88,0.12);
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    min-height: 100vh;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  /* ---- HEADER ---- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .brand-icon {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+  }
+  .brand-name {
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--text);
+  }
+  .brand-sub {
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: 1px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--green);
+    padding: 4px 10px;
+    border: 1px solid rgba(48,209,88,0.2);
+    border-radius: 20px;
+    background: var(--green-dim);
+  }
+  .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  /* ---- LAYOUT ---- */
+  .page { max-width: 1100px; margin: 0 auto; padding: 28px 24px 60px; }
+
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 12px;
+  }
+
+  /* ---- DATE RANGE CONTROLS ---- */
+  .controls-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin-bottom: 28px;
+  }
+  .preset-group {
+    display: flex;
+    gap: 4px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+  }
+  .preset-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    padding: 7px 14px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text2);
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+  }
+  .preset-btn:hover { color: var(--text); background: var(--bg3); }
+  .preset-btn.active {
+    background: var(--red);
+    color: #fff;
+    font-weight: 600;
+  }
+  .date-inputs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .date-label { font-size: 10px; color: var(--text3); letter-spacing: 0.08em; text-transform: uppercase; }
+  .date-input {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 7px 12px;
+    outline: none;
+    transition: border-color 0.18s;
+    color-scheme: dark;
+  }
+  .date-input:focus { border-color: var(--red); }
+  .fetch-btn {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    background: var(--red);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 20px;
+    cursor: pointer;
+    transition: opacity 0.18s, transform 0.1s;
+  }
+  .fetch-btn:hover { opacity: 0.85; }
+  .fetch-btn:active { transform: scale(0.97); }
+  .fetch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ---- HERO COUNT ---- */
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  @media (max-width: 700px) { .hero-grid { grid-template-columns: 1fr; } }
+
+  .hero-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .hero-card:first-child {
+    grid-column: span 1;
+    border-color: rgba(232,59,59,0.35);
+    background: linear-gradient(135deg, rgba(232,59,59,0.07) 0%, var(--bg2) 60%);
+  }
+  .hero-card-accent {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--red);
+    opacity: 0.8;
+  }
+  .hero-card:first-child .hero-card-accent { opacity: 1; }
+  .hero-card-label {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 12px;
+  }
+  .hero-count {
+    font-family: var(--sans);
+    font-size: 64px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--red);
+    margin-bottom: 4px;
+    transition: all 0.3s ease;
+    min-height: 64px;
+    display: flex;
+    align-items: center;
+  }
+  .hero-card:not(:first-child) .hero-count {
+    font-size: 42px;
+    color: var(--text);
+  }
+  .hero-range {
+    font-size: 11px;
+    color: var(--text3);
+    margin-top: 8px;
+  }
+  .skeleton {
+    display: inline-block;
+    width: 80px;
+    height: 1em;
+    background: var(--bg3);
+    border-radius: 4px;
+    animation: shimmer 1.2s ease infinite;
+    vertical-align: middle;
+  }
+  .skeleton-sm { width: 50px; }
+  @keyframes shimmer {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+
+  /* ---- STATUS BAR ---- */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    margin-bottom: 28px;
+    transition: all 0.3s;
+  }
+  .status-bar.loading { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
+  .status-bar.success { background: var(--green-dim); color: var(--green); border: 1px solid rgba(48,209,88,0.2); }
+  .status-bar.error { background: rgba(232,59,59,0.1); color: #ff7b7b; border: 1px solid rgba(232,59,59,0.25); }
+  .status-bar.warn { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,166,35,0.2); }
+  .status-bar.hidden { display: none; }
+  .status-icon { font-size: 14px; flex-shrink: 0; }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- CORS HELP BOX ---- */
+  .cors-help {
+    background: var(--bg2);
+    border: 1px solid rgba(245,166,35,0.25);
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin-bottom: 28px;
+    display: none;
+  }
+  .cors-help.visible { display: block; }
+  .cors-help h3 { font-family: var(--sans); font-size: 14px; font-weight: 700; color: var(--amber); margin-bottom: 10px; }
+  .cors-help p, .cors-help li { font-size: 12px; color: var(--text2); line-height: 1.7; }
+  .cors-help ul { padding-left: 18px; margin-top: 8px; }
+  .cors-help code { background: var(--bg3); padding: 1px 5px; border-radius: 3px; color: var(--amber); font-size: 11px; }
+
+  /* ---- DATA TABLE ---- */
+  .table-section { margin-bottom: 28px; }
+  .table-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .table-title { font-family: var(--sans); font-size: 14px; font-weight: 700; color: var(--text); }
+  .sort-btns { display: flex; gap: 4px; }
+  .sort-btn {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text3);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .sort-btn.active { border-color: var(--red); color: var(--red); }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .data-table th {
+    text-align: left;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text3);
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+  }
+  .data-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+    color: var(--text2);
+    transition: background 0.15s;
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tbody tr:hover td { background: var(--bg3); }
+  .data-table .td-state { color: var(--text); font-weight: 500; }
+  .data-table .td-count {
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--red);
+  }
+  .bar-wrap {
+    height: 6px;
+    background: var(--bg3);
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 80px;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--red);
+    transition: width 0.5s ease;
+  }
+  .table-wrap {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .table-empty {
+    padding: 40px;
+    text-align: center;
+    color: var(--text3);
+    font-size: 12px;
+  }
+
+  /* ---- EVENTS TABLE ---- */
+  .events-section { margin-bottom: 28px; }
+  .event-row-type {
+    display: inline-block;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    padding: 2px 8px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    font-weight: 600;
+    background: var(--red-dim);
+    color: var(--red);
+    border: 1px solid rgba(232,59,59,0.25);
+  }
+  .event-row-date { color: var(--text3); }
+  .event-row-wfo {
+    display: inline-block;
+    background: var(--bg3);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--text2);
+  }
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 12px;
+    font-size: 11px;
+  }
+  .page-info { color: var(--text3); }
+  .page-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg2);
+    color: var(--text2);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .page-btn:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
+  .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* ---- FOOTER ---- */
+  .footer {
+    border-top: 1px solid var(--border);
+    padding-top: 20px;
+    margin-top: 20px;
+    font-size: 11px;
+    color: var(--text3);
+    line-height: 1.7;
+  }
+  .footer a { color: var(--text2); text-decoration: underline; text-underline-offset: 3px; }
+
+  /* ---- SPINNER / NO-DATA ---- */
+  .spinner-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 40px;
+    color: var(--text3);
+    font-size: 12px;
+  }
+  .big-spinner {
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--border2);
+    border-top-color: var(--red);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ---- LAST UPDATED ---- */
+  .last-updated {
+    font-size: 10px;
+    color: var(--text3);
+    letter-spacing: 0.06em;
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<header class="topbar">
+  <div class="topbar-brand">
+    <svg class="brand-icon" viewBox="0 0 32 32" fill="none">
+      <circle cx="16" cy="16" r="15" stroke="#e83b3b" stroke-width="1.5" opacity="0.4"/>
+      <path d="M16 4 C10 10, 22 12, 16 18 C10 24, 22 22, 16 28" stroke="#e83b3b" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <circle cx="16" cy="16" r="3" fill="#e83b3b"/>
+    </svg>
+    <div>
+      <div class="brand-name">TORNADO TRACKER</div>
+      <div class="brand-sub">NWS Damage Assessment Toolkit</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      LIVE DATA
+    </div>
+    <div class="last-updated" id="last-updated-label"></div>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main class="page">
+
+  <!-- CONTROLS -->
+  <div class="section-label">Date Range</div>
+  <div class="controls-row">
+    <div class="preset-group">
+      <button class="preset-btn active" data-preset="ytd">YTD</button>
+      <button class="preset-btn" data-preset="30d">Last 30 Days</button>
+      <button class="preset-btn" data-preset="90d">Last 90 Days</button>
+      <button class="preset-btn" data-preset="1y">Past Year</button>
+      <button class="preset-btn" data-preset="custom">Custom</button>
+    </div>
+    <div class="date-inputs" id="custom-inputs" style="display:none">
+      <span class="date-label">From</span>
+      <input type="date" class="date-input" id="date-start">
+      <span class="date-label">To</span>
+      <input type="date" class="date-input" id="date-end">
+    </div>
+    <button class="fetch-btn" id="fetch-btn" onclick="fetchData()">&#8635; Fetch Data</button>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="status-bar hidden" id="status-bar">
+    <span class="status-icon" id="status-icon"></span>
+    <span id="status-text"></span>
+  </div>
+
+  <!-- NETWORK ERROR HELP -->
+  <div class="cors-help" id="cors-help">
+    <h3>⚠ Network Error</h3>
+    <p>Could not reach the NWS DAT API. This could be a temporary outage or connectivity issue. Try again in a moment, or visit the DAT directly: <a href="https://apps.nws.noaa.gov/DAT" target="_blank" style="color:var(--amber)">apps.nws.noaa.gov/DAT</a></p>
+  </div>
+
+  <!-- HERO STATS -->
+  <div class="section-label">Summary</div>
+  <div class="hero-grid">
+    <div class="hero-card">
+      <div class="hero-card-accent"></div>
+      <div class="hero-card-label">&#9651; Tornado Events</div>
+      <div class="hero-count" id="count-tornado">—</div>
+      <div class="hero-range" id="range-label">Select a date range and fetch data</div>
+    </div>
+    <div class="hero-card">
+      <div class="hero-card-accent" style="background:var(--amber)"></div>
+      <div class="hero-card-label">States Affected</div>
+      <div class="hero-count" id="count-states">—</div>
+      <div class="hero-range">Unique states with tornadoes</div>
+    </div>
+    <div class="hero-card">
+      <div class="hero-card-accent" style="background:var(--text3)"></div>
+      <div class="hero-card-label">Total Assessments</div>
+      <div class="hero-count" id="count-total">—</div>
+      <div class="hero-range">All DAT event types</div>
+    </div>
+  </div>
+
+  <!-- STATE BREAKDOWN -->
+  <div class="table-section">
+    <div class="table-header">
+      <div class="table-title">Tornadoes by State</div>
+      <div class="sort-btns">
+        <button class="sort-btn active" id="sort-count" onclick="sortTable('count')">By Count</button>
+        <button class="sort-btn" id="sort-alpha" onclick="sortTable('alpha')">A–Z</button>
+      </div>
+    </div>
+    <div class="table-wrap" id="state-table-wrap">
+      <div class="table-empty">Fetch data to see state breakdown</div>
+    </div>
+  </div>
+
+  <!-- RECENT EVENTS -->
+  <div class="events-section">
+    <div class="table-header">
+      <div class="table-title">Recent Tornado Events</div>
+      <div class="sort-btns">
+        <button class="sort-btn active" style="color:var(--text3); border-color:var(--border)">Most Recent</button>
+      </div>
+    </div>
+    <div class="table-wrap" id="events-table-wrap">
+      <div class="table-empty">Fetch data to see recent events</div>
+    </div>
+    <div class="pagination" id="pagination" style="display:none">
+      <span class="page-info" id="page-info"></span>
+      <button class="page-btn" id="prev-btn" onclick="changePage(-1)" disabled>&#8592; Prev</button>
+      <button class="page-btn" id="next-btn" onclick="changePage(1)">Next &#8594;</button>
+    </div>
+  </div>
+
+  <footer class="footer">
+    Data source: <a href="https://apps.nws.noaa.gov/DAT" target="_blank">NWS Damage Assessment Toolkit (DAT)</a> &mdash;
+    National Weather Service / NOAA &mdash;
+    Queries the public DAT API at <code style="color:var(--text2)">apps.nws.noaa.gov/DAT/services/eventList</code>.
+    DAT captures post-storm field damage surveys; events may have a 24–72 hour reporting lag.
+  </footer>
+</main>
+
+<script>
+  // ---- STATE ----
+  const API_BASE = 'https://apps.nws.noaa.gov/DAT/services/eventList';
+  let allTornadoes = [];
+  let stateData = {};
+  let currentPage = 1;
+  const PAGE_SIZE = 15;
+  let sortMode = 'count';
+  let currentPreset = 'ytd';
+
+  // ---- DATE HELPERS ----
+  function fmt(d) {
+    return d.toISOString().split('T')[0];
+  }
+  function today() { return new Date(); }
+  function daysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return d; }
+  function yearStart() { const d = new Date(); d.setMonth(0, 1); return d; }
+  function yearAgo() { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d; }
+
+  function getDateRange(preset) {
+    const end = fmt(today());
+    if (preset === 'ytd') return { start: fmt(yearStart()), end };
+    if (preset === '30d') return { start: fmt(daysAgo(30)), end };
+    if (preset === '90d') return { start: fmt(daysAgo(90)), end };
+    if (preset === '1y') return { start: fmt(yearAgo()), end };
+    if (preset === 'custom') {
+      return {
+        start: document.getElementById('date-start').value,
+        end: document.getElementById('date-end').value
+      };
+    }
+  }
+
+  // ---- PRESET BUTTONS ----
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPreset = btn.dataset.preset;
+      const customInputs = document.getElementById('custom-inputs');
+      if (currentPreset === 'custom') {
+        customInputs.style.display = 'flex';
+        // Default custom dates
+        if (!document.getElementById('date-start').value) {
+          document.getElementById('date-start').value = fmt(daysAgo(30));
+          document.getElementById('date-end').value = fmt(today());
+        }
+      } else {
+        customInputs.style.display = 'none';
+      }
+    });
+  });
+
+  // ---- STATUS ----
+  function setStatus(type, text) {
+    const bar = document.getElementById('status-bar');
+    const icon = document.getElementById('status-icon');
+    const label = document.getElementById('status-text');
+    bar.className = 'status-bar ' + type;
+    label.textContent = text;
+    const icons = { loading: '⟳', success: '✓', error: '✕', warn: '⚠' };
+    icon.textContent = icons[type] || '';
+    if (type === 'loading') icon.classList.add('spin');
+    else icon.classList.remove('spin');
+  }
+  function hideStatus() { document.getElementById('status-bar').className = 'status-bar hidden'; }
+
+  // ---- LOADING SKELETONS ----
+  function setLoading(on) {
+    const ids = ['count-tornado', 'count-states', 'count-total'];
+    ids.forEach(id => {
+      document.getElementById(id).innerHTML = on
+        ? '<span class="skeleton"></span>'
+        : (id === 'count-tornado' ? '—' : '—');
+    });
+    document.getElementById('fetch-btn').disabled = on;
+  }
+
+  // ---- ANIMATED COUNT ----
+  function animateCount(el, target) {
+    let current = 0;
+    const step = Math.ceil(target / 30);
+    const timer = setInterval(() => {
+      current = Math.min(current + step, target);
+      el.textContent = current.toLocaleString();
+      if (current >= target) clearInterval(timer);
+    }, 30);
+  }
+
+  // ---- FETCH DATA ----
+  async function fetchData() {
+    const { start, end } = getDateRange(currentPreset);
+    if (!start || !end) { setStatus('error', 'Please select valid start and end dates.'); return; }
+    if (start > end) { setStatus('error', 'Start date must be before end date.'); return; }
+
+    setLoading(true);
+    setStatus('loading', `Fetching DAT events from ${start} to ${end}…`);
+    document.getElementById('cors-help').classList.remove('visible');
+
+    const url = `${API_BASE}?startDate=${start}&endDate=${end}`;
+
+    try {
+      const res = await fetch(url, {
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+
+      const raw = await res.json();
+      processData(raw, start, end);
+
+    } catch (err) {
+      setLoading(false);
+      const isNetwork = err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.name === 'TypeError';
+      if (isNetwork) {
+        setStatus('error', 'Network error — could not reach NWS DAT API. See guidance below.');
+        document.getElementById('cors-help').classList.add('visible');
+      } else {
+        setStatus('error', `Error: ${err.message}`);
+      }
+      console.error('DAT API error:', err);
+    }
+  }
+
+  // ---- PARSE & DISPLAY ----
+  function isTornado(event) {
+    const typeFields = [
+      event.type, event.eventType, event.event_type,
+      event.category, event.hazard, event.phenomenon
+    ];
+    return typeFields.some(f =>
+      f && (
+        String(f).toUpperCase().includes('TORNADO') ||
+        String(f).toUpperCase() === 'TOR' ||
+        String(f).toUpperCase() === 'TORN'
+      )
+    );
+  }
+
+  function extractState(event) {
+    return (event.state || event.stateCode || event.state_code || '').toUpperCase().trim() || 'UNK';
+  }
+
+  function extractDate(event) {
+    return event.beginDate || event.begin_date || event.date || event.eventDate || event.survey_date || '';
+  }
+
+  function extractWFO(event) {
+    return event.wfo || event.wfoId || event.wfo_id || event.office || '';
+  }
+
+  function extractLocation(event) {
+    return event.location || event.city || event.county || event.area || '';
+  }
+
+  function processData(raw, start, end) {
+    // Normalise to array
+    let events = Array.isArray(raw) ? raw
+      : (raw.events || raw.data || raw.results || raw.eventList || []);
+
+    if (!Array.isArray(events)) {
+      // Try wrapping
+      events = [raw];
+    }
+
+    const tornadoes = events.filter(isTornado);
+    allTornadoes = tornadoes.sort((a, b) => extractDate(b).localeCompare(extractDate(a)));
+
+    // State counts
+    stateData = {};
+    tornadoes.forEach(e => {
+      const s = extractState(e);
+      stateData[s] = (stateData[s] || 0) + 1;
+    });
+
+    const stateCount = Object.keys(stateData).filter(s => s !== 'UNK' && s !== '').length;
+
+    // Update hero counts
+    setLoading(false);
+    const countEl = document.getElementById('count-tornado');
+    const stateEl = document.getElementById('count-states');
+    const totalEl = document.getElementById('count-total');
+    animateCount(countEl, tornadoes.length);
+    animateCount(stateEl, stateCount);
+    animateCount(totalEl, events.length);
+    countEl.style.color = tornadoes.length > 0 ? 'var(--red)' : 'var(--text)';
+
+    // Range label
+    document.getElementById('range-label').textContent =
+      `${formatDate(start)} → ${formatDate(end)}`;
+
+    // Last updated
+    document.getElementById('last-updated-label').textContent =
+      'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Tables
+    renderStateTable();
+    currentPage = 1;
+    renderEventsTable();
+
+    const note = tornadoes.length === 0
+      ? ' (No tornado assessments found for this period — try a wider range)'
+      : '';
+    setStatus('success', `Loaded ${events.length.toLocaleString()} total events · ${tornadoes.length.toLocaleString()} tornado assessments${note}`);
+  }
+
+  function formatDate(d) {
+    if (!d) return '';
+    const parts = d.split('-');
+    if (parts.length === 3) {
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return `${months[parseInt(parts[1]) - 1]} ${parseInt(parts[2])}, ${parts[0]}`;
+    }
+    return d;
+  }
+
+  // ---- STATE TABLE ----
+  function sortTable(mode) {
+    sortMode = mode;
+    document.getElementById('sort-count').classList.toggle('active', mode === 'count');
+    document.getElementById('sort-alpha').classList.toggle('active', mode === 'alpha');
+    renderStateTable();
+  }
+
+  function renderStateTable() {
+    const wrap = document.getElementById('state-table-wrap');
+    const entries = Object.entries(stateData);
+    if (entries.length === 0) {
+      wrap.innerHTML = '<div class="table-empty">No tornado data to display</div>';
+      return;
+    }
+
+    const sorted = entries.sort((a, b) =>
+      sortMode === 'count' ? b[1] - a[1] : a[0].localeCompare(b[0])
+    );
+    const max = Math.max(...entries.map(e => e[1]));
+
+    const rows = sorted.map(([state, count]) => `
+      <tr>
+        <td class="td-state">${STATE_NAMES[state] || state}</td>
+        <td class="td-count">${count}</td>
+        <td style="min-width:120px">
+          <div class="bar-wrap">
+            <div class="bar-fill" style="width:${Math.round((count/max)*100)}%"></div>
+          </div>
+        </td>
+        <td class="event-row-date" style="color:var(--text3);font-size:11px">${((count/allTornadoes.length)*100).toFixed(1)}%</td>
+      </tr>
+    `).join('');
+
+    wrap.innerHTML = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>State</th>
+            <th>Tornadoes</th>
+            <th>Relative</th>
+            <th>% of Total</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  // ---- EVENTS TABLE ----
+  function changePage(dir) {
+    const totalPages = Math.ceil(allTornadoes.length / PAGE_SIZE);
+    currentPage = Math.max(1, Math.min(totalPages, currentPage + dir));
+    renderEventsTable();
+  }
+
+  function renderEventsTable() {
+    const wrap = document.getElementById('events-table-wrap');
+    const pg = document.getElementById('pagination');
+    if (allTornadoes.length === 0) {
+      wrap.innerHTML = '<div class="table-empty">No tornado events to display</div>';
+      pg.style.display = 'none';
+      return;
+    }
+
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const slice = allTornadoes.slice(start, start + PAGE_SIZE);
+    const totalPages = Math.ceil(allTornadoes.length / PAGE_SIZE);
+
+    const rows = slice.map(e => {
+      const date = formatDate(extractDate(e).split('T')[0]);
+      const state = extractState(e);
+      const wfo = extractWFO(e);
+      const loc = extractLocation(e);
+      return `
+        <tr>
+          <td><span class="event-row-type">TORNADO</span></td>
+          <td class="event-row-date">${date || '—'}</td>
+          <td class="td-state">${STATE_NAMES[state] || state || '—'}</td>
+          <td>${loc || '—'}</td>
+          <td>${wfo ? `<span class="event-row-wfo">${wfo}</span>` : '—'}</td>
+        </tr>
+      `;
+    }).join('');
+
+    wrap.innerHTML = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Date</th>
+            <th>State</th>
+            <th>Location</th>
+            <th>WFO</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+
+    pg.style.display = 'flex';
+    document.getElementById('page-info').textContent =
+      `Page ${currentPage} of ${totalPages}  (${allTornadoes.length} total)`;
+    document.getElementById('prev-btn').disabled = currentPage <= 1;
+    document.getElementById('next-btn').disabled = currentPage >= totalPages;
+  }
+
+  // ---- STATE NAME MAP ----
+  const STATE_NAMES = {
+    AL:'Alabama', AK:'Alaska', AZ:'Arizona', AR:'Arkansas', CA:'California',
+    CO:'Colorado', CT:'Connecticut', DE:'Delaware', FL:'Florida', GA:'Georgia',
+    HI:'Hawaii', ID:'Idaho', IL:'Illinois', IN:'Indiana', IA:'Iowa',
+    KS:'Kansas', KY:'Kentucky', LA:'Louisiana', ME:'Maine', MD:'Maryland',
+    MA:'Massachusetts', MI:'Michigan', MN:'Minnesota', MS:'Mississippi',
+    MO:'Missouri', MT:'Montana', NE:'Nebraska', NV:'Nevada', NH:'New Hampshire',
+    NJ:'New Jersey', NM:'New Mexico', NY:'New York', NC:'North Carolina',
+    ND:'North Dakota', OH:'Ohio', OK:'Oklahoma', OR:'Oregon', PA:'Pennsylvania',
+    RI:'Rhode Island', SC:'South Carolina', SD:'South Dakota', TN:'Tennessee',
+    TX:'Texas', UT:'Utah', VT:'Vermont', VA:'Virginia', WA:'Washington',
+    WV:'West Virginia', WI:'Wisconsin', WY:'Wyoming', DC:'D.C.',
+    PR:'Puerto Rico', VI:'Virgin Islands', GU:'Guam'
+  };
+
+  // ---- INIT: Auto-fetch YTD on load ----
+  window.addEventListener('load', () => {
+    fetchData();
+  });
+</script>
+</body>
+</html>
