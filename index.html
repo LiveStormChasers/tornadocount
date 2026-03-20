@@ -389,11 +389,61 @@ async function fetchAll() {
     return;
   }
 
+  // Resolve states from coordinates before rendering
+  if (datEvs.length > 0) {
+    setStatus('loading', `Resolving states for ${datEvs.length} surveys via coordinates…`);
+    await resolveStates(datEvs);
+  }
+
   renderAll(s,e);
   const parts=[];
   parts.push(dOk ? `DAT: ${datEvs.length} confirmed tornado surveys` : 'DAT: unavailable');
   parts.push(iOk ? `IEM: ${iemCnt} local storm reports`              : 'IEM: unavailable');
   setStatus(dOk&&iOk?'ok':'warn', parts.join('  ·  '));
+}
+
+/* ── COORDINATE → STATE (FCC Census API) ─────────────
+   Deduplicates by ~0.1° grid, batches 8 at a time,
+   caches results so re-fetching the same range is instant.
+   Falls back to WFO lookup if FCC call fails.           */
+const coordCache = {};
+
+async function resolveStates(events) {
+  const keyMap = {};
+  events.forEach((ev, i) => {
+    if (!ev.startlat || !ev.startlon) return;
+    const key = `${ev.startlat.toFixed(1)},${ev.startlon.toFixed(1)}`;
+    if (!keyMap[key]) keyMap[key] = { lat: ev.startlat, lon: ev.startlon, indices: [] };
+    keyMap[key].indices.push(i);
+  });
+
+  const uncached = Object.entries(keyMap).filter(([k]) => !coordCache[k]);
+  const total = uncached.length;
+  let done = 0;
+
+  for (let i = 0; i < uncached.length; i += 8) {
+    const batch = uncached.slice(i, i + 8);
+    await Promise.all(batch.map(async ([key, {lat, lon}]) => {
+      try {
+        const res = await fetch(`https://geo.fcc.gov/api/census/block/find?latitude=${lat}&longitude=${lon}&format=json`);
+        if (res.ok) {
+          const j = await res.json();
+          coordCache[key] = j?.State?.code || null;
+        }
+      } catch(e) { coordCache[key] = null; }
+      done++;
+    }));
+    if (i + 8 < uncached.length) {
+      setStatus('loading', `Resolving states… ${done} of ${total}`);
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+
+  events.forEach((ev) => {
+    if (!ev.startlat || !ev.startlon) return;
+    const key = `${ev.startlat.toFixed(1)},${ev.startlon.toFixed(1)}`;
+    ev._state = coordCache[key] || WFO_ST[ev.wfo?.toUpperCase()?.trim()] || null;
+  });
 }
 
 /* ── FETCH DAT ─────────────────────────────────────── */
@@ -429,7 +479,7 @@ function renderAll(s,e) {
     const scale=(ev.efscale||'').toUpperCase().replace('EF3+','EF3').replace('EF UNKNOWN','UNK');
     const key = ['EF0','EF1','EF2','EF3','EF4','EF5'].includes(scale)?scale:'UNK';
     ef[key]=(ef[key]||0)+1;
-    const st=WFO_ST[ev.wfo?.toUpperCase()?.trim()]||null;
+    const st = ev._state || WFO_ST[ev.wfo?.toUpperCase()?.trim()] || null;
     if (st) stMap[st]=(stMap[st]||0)+1;
     if (ev.injuries>0)   inj+=ev.injuries;
     if (ev.fatalities>0) fat+=ev.fatalities;
@@ -496,7 +546,7 @@ function renderEventsTable() {
   const slice=datEvs.slice((curPg-1)*PG, curPg*PG);
   const totPg=Math.ceil(datEvs.length/PG);
   el.innerHTML=`<table>
-    <thead><tr><th>Date</th><th>EF Rating</th><th>WFO</th><th>Lat</th><th>Lon</th><th>Path Length (mi)</th><th>Path Width (yds)</th><th>Injuries</th><th>Fatalities</th></tr></thead>
+    <thead><tr><th>Date</th><th>State</th><th>EF Rating</th><th>WFO</th><th>Path Length (mi)</th><th>Path Width (yds)</th><th>Injuries</th><th>Fatalities</th></tr></thead>
     <tbody>${slice.map(ev=>{
       const d=ev.stormdate?new Date(ev.stormdate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
       const ef=(ev.efscale||'?').toUpperCase();
@@ -506,12 +556,12 @@ function renderEventsTable() {
       const wid=ev.width>0?ev.width:'—';
       const inj=ev.injuries>0?`<span style="color:var(--amb)">${ev.injuries}</span>`:'0';
       const fat=ev.fatalities>0?`<span style="color:var(--red)">${ev.fatalities}</span>`:'0';
+      const stName = ev._state ? (ST_N[ev._state]||ev._state) : (ev.wfo ? WFO_ST[ev.wfo.toUpperCase().trim()] ? ST_N[WFO_ST[ev.wfo.toUpperCase().trim()]]||WFO_ST[ev.wfo.toUpperCase().trim()] : '—' : '—');
       return `<tr>
         <td style="color:var(--t2)">${d}</td>
+        <td class="tds">${stName}</td>
         <td><span class="eftag ${ec}" style="background:${efbg}">${ev.efscale||'?'}</span></td>
         <td><span style="background:var(--bg3);padding:1px 6px;border-radius:3px;font-size:11px">${ev.wfo||'—'}</span></td>
-        <td style="font-size:11px;color:var(--t3)">${ev.startlat?ev.startlat.toFixed(3):'—'}</td>
-        <td style="font-size:11px;color:var(--t3)">${ev.startlon?ev.startlon.toFixed(3):'—'}</td>
         <td>${len}</td><td>${wid}</td><td>${inj}</td><td>${fat}</td>
       </tr>`;
     }).join('')}</tbody>
