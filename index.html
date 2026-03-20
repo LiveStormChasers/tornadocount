@@ -4,926 +4,569 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NWS Tornado Count Dashboard</title>
+<!--
+  DATA SOURCES
+  ───────────────────────────────────────────────────────
+  NWS DAT (confirmed field surveys):
+    services.dat.noaa.gov/arcgis/rest/services/
+    nws_damageassessmenttoolkit/DamageViewer/FeatureServer/1/query
+    Layer 1 = Damage Lines w/ EF scale, injuries, fatalities
+
+  IEM LSR (NWS Local Storm Reports, near-realtime):
+    mesonet.agron.iastate.edu/cgi-bin/request/gis/lsr.py
+    type=T (tornado), fmt=csv, wfo=ALL
+  ───────────────────────────────────────────────────────
+-->
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Bebas+Neue&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0a0c10;
-    --bg2: #111419;
-    --bg3: #181c23;
-    --border: rgba(255,255,255,0.08);
-    --border2: rgba(255,255,255,0.14);
-    --red: #e83b3b;
-    --red-dim: rgba(232,59,59,0.15);
-    --red-glow: rgba(232,59,59,0.25);
-    --amber: #f5a623;
-    --amber-dim: rgba(245,166,35,0.12);
-    --text: #e8eaf0;
-    --text2: #8c90a0;
-    --text3: #555c6e;
-    --mono: 'IBM Plex Mono', monospace;
-    --sans: 'Syne', sans-serif;
-    --green: #30d158;
-    --green-dim: rgba(48,209,88,0.12);
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:  #0a0c10; --bg2: #111419; --bg3: #181c23;
+  --bdr: rgba(255,255,255,0.07); --bdr2: rgba(255,255,255,0.13);
+  --red: #e83b3b; --red-d: rgba(232,59,59,0.12);
+  --amb: #f5a623; --amb-d: rgba(245,166,35,0.11);
+  --blu: #3b8fe8; --blu-d: rgba(59,143,232,0.11);
+  --grn: #30d158; --grn-d: rgba(48,209,88,0.11);
+  --t1: #e8eaf0; --t2: #8c90a0; --t3: #50566a;
+  --mono: 'IBM Plex Mono',monospace; --sans: 'Bebas Neue','Barlow',sans-serif; --ui: 'Barlow',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--t1);font-family:var(--mono);min-height:100vh}
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--mono);
-    min-height: 100vh;
-    padding: 0;
-    overflow-x: hidden;
-  }
+/* topbar */
+.top{display:flex;align-items:center;justify-content:space-between;padding:13px 26px;
+  border-bottom:1px solid var(--bdr);background:var(--bg2);position:sticky;top:0;z-index:20}
+.brand{display:flex;align-items:center;gap:10px}
+.bico{width:30px;height:30px;flex-shrink:0}
+.bname{font-family:'Barlow',sans-serif;font-size:14px;font-weight:700;letter-spacing:.03em}
+.bsub{font-size:10px;color:var(--t3);letter-spacing:.09em;text-transform:uppercase;margin-top:1px}
+.top-r{display:flex;align-items:center;gap:10px}
+.live{display:flex;align-items:center;gap:5px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--grn);padding:4px 10px;border:1px solid rgba(48,209,88,.22);border-radius:20px;background:var(--grn-d)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--grn);animation:blink 2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.tslbl{font-size:10px;color:var(--t3)}
 
-  /* ---- HEADER ---- */
-  .topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 28px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg2);
-    position: sticky;
-    top: 0;
-    z-index: 10;
-  }
-  .topbar-brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .brand-icon {
-    width: 32px;
-    height: 32px;
-    flex-shrink: 0;
-  }
-  .brand-name {
-    font-family: var(--sans);
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    color: var(--text);
-  }
-  .brand-sub {
-    font-size: 10px;
-    color: var(--text3);
-    margin-top: 1px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-  .topbar-right {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .live-badge {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 10px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--green);
-    padding: 4px 10px;
-    border: 1px solid rgba(48,209,88,0.2);
-    border-radius: 20px;
-    background: var(--green-dim);
-  }
-  .live-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--green);
-    animation: pulse 2s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(0.8); }
-  }
+/* layout */
+.pg{max-width:1080px;margin:0 auto;padding:26px 22px 70px}
+.sl{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--t3);margin-bottom:10px}
 
-  /* ---- LAYOUT ---- */
-  .page { max-width: 1100px; margin: 0 auto; padding: 28px 24px 60px; }
+/* controls */
+.cr{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:24px}
+.pset{display:flex;gap:3px;background:var(--bg2);border:1px solid var(--bdr);border-radius:8px;padding:3px}
+.pb{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.05em;padding:6px 13px;
+  border:none;border-radius:5px;background:transparent;color:var(--t2);cursor:pointer;transition:all .15s;white-space:nowrap}
+.pb:hover{color:var(--t1);background:var(--bg3)}
+.pb.on{background:var(--red);color:#fff;font-weight:600}
+.dw{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.dl{font-size:10px;color:var(--t3);letter-spacing:.08em;text-transform:uppercase}
+.di{font-family:var(--mono);font-size:12px;background:var(--bg2);border:1px solid var(--bdr2);
+  border-radius:6px;color:var(--t1);padding:6px 11px;outline:none;transition:border-color .15s;color-scheme:dark}
+.di:focus{border-color:var(--red)}
+.go{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.05em;
+  background:var(--red);color:#fff;border:none;border-radius:6px;padding:7px 18px;
+  cursor:pointer;transition:opacity .15s,transform .1s}
+.go:hover{opacity:.82}
+.go:active{transform:scale(.97)}
+.go:disabled{opacity:.35;cursor:not-allowed}
 
-  .section-label {
-    font-size: 10px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--text3);
-    margin-bottom: 12px;
-  }
+/* status */
+.st{display:flex;align-items:center;gap:9px;padding:9px 13px;border-radius:8px;
+  font-size:12px;margin-bottom:22px;transition:all .2s}
+.st.hidden{display:none}
+.st.loading{background:var(--bg3);color:var(--t2);border:1px solid var(--bdr)}
+.st.ok{background:var(--grn-d);color:var(--grn);border:1px solid rgba(48,209,88,.2)}
+.st.warn{background:var(--amb-d);color:var(--amb);border:1px solid rgba(245,166,35,.2)}
+.st.err{background:var(--red-d);color:#ff8080;border:1px solid rgba(232,59,59,.25)}
+.si{font-size:13px;flex-shrink:0}
+.spin{animation:rot .8s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
 
-  /* ---- DATE RANGE CONTROLS ---- */
-  .controls-row {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    margin-bottom: 28px;
-  }
-  .preset-group {
-    display: flex;
-    gap: 4px;
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 4px;
-  }
-  .preset-btn {
-    font-family: var(--mono);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    padding: 7px 14px;
-    border: none;
-    border-radius: 5px;
-    background: transparent;
-    color: var(--text2);
-    cursor: pointer;
-    transition: all 0.18s ease;
-    white-space: nowrap;
-  }
-  .preset-btn:hover { color: var(--text); background: var(--bg3); }
-  .preset-btn.active {
-    background: var(--red);
-    color: #fff;
-    font-weight: 600;
-  }
-  .date-inputs {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .date-label { font-size: 10px; color: var(--text3); letter-spacing: 0.08em; text-transform: uppercase; }
-  .date-input {
-    font-family: var(--mono);
-    font-size: 12px;
-    background: var(--bg2);
-    border: 1px solid var(--border2);
-    border-radius: 6px;
-    color: var(--text);
-    padding: 7px 12px;
-    outline: none;
-    transition: border-color 0.18s;
-    color-scheme: dark;
-  }
-  .date-input:focus { border-color: var(--red); }
-  .fetch-btn {
-    font-family: var(--mono);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    background: var(--red);
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 20px;
-    cursor: pointer;
-    transition: opacity 0.18s, transform 0.1s;
-  }
-  .fetch-btn:hover { opacity: 0.85; }
-  .fetch-btn:active { transform: scale(0.97); }
-  .fetch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* error box */
+.eb{background:rgba(232,59,59,.07);border:1px solid rgba(232,59,59,.2);border-radius:10px;
+  padding:18px 20px;margin-bottom:22px;display:none}
+.eb.show{display:block}
+.eb h3{font-family:var(--sans);font-size:13px;font-weight:700;color:var(--red);margin-bottom:8px}
+.eb p,.eb li{font-size:12px;color:var(--t2);line-height:1.7}
+.eb ul{padding-left:16px;margin-top:6px}
 
-  /* ---- HERO COUNT ---- */
-  .hero-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 14px;
-    margin-bottom: 28px;
-  }
-  @media (max-width: 700px) { .hero-grid { grid-template-columns: 1fr; } }
+/* hero */
+.hero{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:12px;margin-bottom:24px}
+@media(max-width:680px){.hero{grid-template-columns:1fr 1fr}}
+.hc{background:var(--bg2);border:1px solid var(--bdr);border-radius:12px;
+  padding:20px 20px 16px;position:relative;overflow:hidden}
+.hc.pri{border-color:rgba(232,59,59,.3);background:linear-gradient(135deg,rgba(232,59,59,.06) 0%,var(--bg2) 55%)}
+.hbar{position:absolute;top:0;left:0;right:0;height:2px}
+.hl{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--t3);margin-bottom:10px}
+.hv{font-family:'Bebas Neue',sans-serif;font-weight:400;line-height:1;margin-bottom:4px;min-height:50px;display:flex;align-items:center;letter-spacing:.02em}
+.hc.pri .hv{font-size:72px;color:var(--red)}
+.hc:not(.pri) .hv{font-size:52px;color:var(--t1)}
+.hsub{font-size:11px;color:var(--t3)}
+.sbadge{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 8px;
+  border-radius:20px;margin-top:7px;letter-spacing:.04em}
+.sbadge.dat{background:var(--red-d);color:var(--red);border:1px solid rgba(232,59,59,.2)}
+.sbadge.iem{background:var(--blu-d);color:var(--blu);border:1px solid rgba(59,143,232,.2)}
 
-  .hero-card {
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 24px;
-    position: relative;
-    overflow: hidden;
-    transition: border-color 0.2s;
-  }
-  .hero-card:first-child {
-    grid-column: span 1;
-    border-color: rgba(232,59,59,0.35);
-    background: linear-gradient(135deg, rgba(232,59,59,0.07) 0%, var(--bg2) 60%);
-  }
-  .hero-card-accent {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    background: var(--red);
-    opacity: 0.8;
-  }
-  .hero-card:first-child .hero-card-accent { opacity: 1; }
-  .hero-card-label {
-    font-size: 10px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--text3);
-    margin-bottom: 12px;
-  }
-  .hero-count {
-    font-family: var(--sans);
-    font-size: 64px;
-    font-weight: 800;
-    line-height: 1;
-    color: var(--red);
-    margin-bottom: 4px;
-    transition: all 0.3s ease;
-    min-height: 64px;
-    display: flex;
-    align-items: center;
-  }
-  .hero-card:not(:first-child) .hero-count {
-    font-size: 42px;
-    color: var(--text);
-  }
-  .hero-range {
-    font-size: 11px;
-    color: var(--text3);
-    margin-top: 8px;
-  }
-  .skeleton {
-    display: inline-block;
-    width: 80px;
-    height: 1em;
-    background: var(--bg3);
-    border-radius: 4px;
-    animation: shimmer 1.2s ease infinite;
-    vertical-align: middle;
-  }
-  .skeleton-sm { width: 50px; }
-  @keyframes shimmer {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 1; }
-  }
+/* skeleton */
+.sk{display:inline-block;width:65px;height:.9em;background:var(--bg3);border-radius:3px;
+  animation:gl 1.1s ease infinite;vertical-align:middle}
+@keyframes gl{0%,100%{opacity:.4}50%{opacity:.85}}
 
-  /* ---- STATUS BAR ---- */
-  .status-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 12px;
-    margin-bottom: 28px;
-    transition: all 0.3s;
-  }
-  .status-bar.loading { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
-  .status-bar.success { background: var(--green-dim); color: var(--green); border: 1px solid rgba(48,209,88,0.2); }
-  .status-bar.error { background: rgba(232,59,59,0.1); color: #ff7b7b; border: 1px solid rgba(232,59,59,0.25); }
-  .status-bar.warn { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,166,35,0.2); }
-  .status-bar.hidden { display: none; }
-  .status-icon { font-size: 14px; flex-shrink: 0; }
-  .spin { animation: spin 1s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+/* ef scale */
+.efrow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}
+.efc{flex:1;min-width:68px;background:var(--bg2);border:1px solid var(--bdr);
+  border-radius:8px;padding:10px 12px;text-align:center}
+.efcl{font-family:'Barlow',sans-serif;font-size:11px;font-weight:600;letter-spacing:.06em;margin-bottom:4px}
+.efcv{font-family:'Bebas Neue',sans-serif;font-size:28px;font-weight:400;letter-spacing:.02em}
+.ef0{color:#00c5b5}.ef1{color:#55ff00}.ef2{color:#ffff00}
+.ef3{color:#e88000}.ef4{color:#e60000}.ef5{color:#a80084}.efU{color:var(--t3)}
 
-  /* ---- CORS HELP BOX ---- */
-  .cors-help {
-    background: var(--bg2);
-    border: 1px solid rgba(245,166,35,0.25);
-    border-radius: 10px;
-    padding: 20px 22px;
-    margin-bottom: 28px;
-    display: none;
-  }
-  .cors-help.visible { display: block; }
-  .cors-help h3 { font-family: var(--sans); font-size: 14px; font-weight: 700; color: var(--amber); margin-bottom: 10px; }
-  .cors-help p, .cors-help li { font-size: 12px; color: var(--text2); line-height: 1.7; }
-  .cors-help ul { padding-left: 18px; margin-top: 8px; }
-  .cors-help code { background: var(--bg3); padding: 1px 5px; border-radius: 3px; color: var(--amber); font-size: 11px; }
+/* dual comparison */
+.dual{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:24px}
+@media(max-width:580px){.dual{grid-template-columns:1fr}}
+.dc{background:var(--bg2);border:1px solid var(--bdr);border-radius:12px;padding:18px 18px 14px}
+.dc h3{font-family:'Barlow',sans-serif;font-size:13px;font-weight:700;margin-bottom:4px}
+.dc p{font-size:11px;color:var(--t3);line-height:1.65}
+.dcv{font-family:'Bebas Neue',sans-serif;font-size:52px;font-weight:400;line-height:1;margin:8px 0 6px;letter-spacing:.02em}
 
-  /* ---- DATA TABLE ---- */
-  .table-section { margin-bottom: 28px; }
-  .table-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-  }
-  .table-title { font-family: var(--sans); font-size: 14px; font-weight: 700; color: var(--text); }
-  .sort-btns { display: flex; gap: 4px; }
-  .sort-btn {
-    font-family: var(--mono);
-    font-size: 10px;
-    padding: 4px 10px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text3);
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .sort-btn.active { border-color: var(--red); color: var(--red); }
+/* tables */
+.tw{background:var(--bg2);border:1px solid var(--bdr);border-radius:12px;overflow:hidden}
+.th2{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.tt{font-family:'Barlow',sans-serif;font-size:15px;font-weight:700}
+.sg{display:flex;gap:3px}
+.sb{font-family:var(--mono);font-size:10px;padding:3px 9px;border:1px solid var(--bdr);
+  border-radius:4px;background:transparent;color:var(--t3);cursor:pointer;transition:all .13s}
+.sb.on{border-color:var(--red);color:var(--red)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--t3);padding:8px 13px;border-bottom:1px solid var(--bdr);font-weight:500}
+td{padding:9px 13px;border-bottom:1px solid var(--bdr);color:var(--t2)}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--bg3)}
+.tds{color:var(--t1);font-weight:500}
+.tdc{font-family:'Bebas Neue',sans-serif;font-size:18px;font-weight:400;color:var(--red);letter-spacing:.02em}
+.bw{height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;min-width:80px}
+.bf{height:100%;border-radius:3px;background:var(--red);transition:width .45s ease}
+.te{padding:36px;text-align:center;color:var(--t3);font-size:12px}
+.eftag{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.04em;
+  padding:2px 7px;border-radius:4px;text-transform:uppercase}
 
-  .data-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-  }
-  .data-table th {
-    text-align: left;
-    font-size: 10px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--text3);
-    padding: 8px 14px;
-    border-bottom: 1px solid var(--border);
-    font-weight: 500;
-  }
-  .data-table td {
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    vertical-align: middle;
-    color: var(--text2);
-    transition: background 0.15s;
-  }
-  .data-table tr:last-child td { border-bottom: none; }
-  .data-table tbody tr:hover td { background: var(--bg3); }
-  .data-table .td-state { color: var(--text); font-weight: 500; }
-  .data-table .td-count {
-    font-family: var(--sans);
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--red);
-  }
-  .bar-wrap {
-    height: 6px;
-    background: var(--bg3);
-    border-radius: 3px;
-    overflow: hidden;
-    min-width: 80px;
-  }
-  .bar-fill {
-    height: 100%;
-    border-radius: 3px;
-    background: var(--red);
-    transition: width 0.5s ease;
-  }
-  .table-wrap {
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    overflow: hidden;
-  }
-  .table-empty {
-    padding: 40px;
-    text-align: center;
-    color: var(--text3);
-    font-size: 12px;
-  }
+/* pagination */
+.pgn{display:flex;align-items:center;justify-content:flex-end;gap:5px;margin-top:11px;font-size:11px}
+.pi{color:var(--t3)}
+.pp{font-family:var(--mono);font-size:11px;padding:3px 11px;border:1px solid var(--bdr);
+  border-radius:4px;background:var(--bg2);color:var(--t2);cursor:pointer;transition:all .13s}
+.pp:hover:not(:disabled){border-color:var(--red);color:var(--red)}
+.pp:disabled{opacity:.3;cursor:not-allowed}
 
-  /* ---- EVENTS TABLE ---- */
-  .events-section { margin-bottom: 28px; }
-  .event-row-type {
-    display: inline-block;
-    font-size: 10px;
-    letter-spacing: 0.06em;
-    padding: 2px 8px;
-    border-radius: 20px;
-    text-transform: uppercase;
-    font-weight: 600;
-    background: var(--red-dim);
-    color: var(--red);
-    border: 1px solid rgba(232,59,59,0.25);
-  }
-  .event-row-date { color: var(--text3); }
-  .event-row-wfo {
-    display: inline-block;
-    background: var(--bg3);
-    padding: 2px 7px;
-    border-radius: 4px;
-    font-size: 11px;
-    color: var(--text2);
-  }
-  .pagination {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 6px;
-    margin-top: 12px;
-    font-size: 11px;
-  }
-  .page-info { color: var(--text3); }
-  .page-btn {
-    font-family: var(--mono);
-    font-size: 11px;
-    padding: 4px 12px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg2);
-    color: var(--text2);
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .page-btn:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
-  .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-
-  /* ---- FOOTER ---- */
-  .footer {
-    border-top: 1px solid var(--border);
-    padding-top: 20px;
-    margin-top: 20px;
-    font-size: 11px;
-    color: var(--text3);
-    line-height: 1.7;
-  }
-  .footer a { color: var(--text2); text-decoration: underline; text-underline-offset: 3px; }
-
-  /* ---- SPINNER / NO-DATA ---- */
-  .spinner-wrap {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 14px;
-    padding: 40px;
-    color: var(--text3);
-    font-size: 12px;
-  }
-  .big-spinner {
-    width: 32px;
-    height: 32px;
-    border: 2px solid var(--border2);
-    border-top-color: var(--red);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  /* ---- LAST UPDATED ---- */
-  .last-updated {
-    font-size: 10px;
-    color: var(--text3);
-    letter-spacing: 0.06em;
-  }
+/* footer */
+.foot{border-top:1px solid var(--bdr);padding-top:18px;margin-top:18px;
+  font-size:11px;color:var(--t3);line-height:1.8}
+.foot a{color:var(--t2);text-underline-offset:3px}
+code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);font-size:11px}
 </style>
 </head>
 <body>
 
-<!-- TOP BAR -->
-<header class="topbar">
-  <div class="topbar-brand">
-    <svg class="brand-icon" viewBox="0 0 32 32" fill="none">
-      <circle cx="16" cy="16" r="15" stroke="#e83b3b" stroke-width="1.5" opacity="0.4"/>
-      <path d="M16 4 C10 10, 22 12, 16 18 C10 24, 22 22, 16 28" stroke="#e83b3b" stroke-width="2" fill="none" stroke-linecap="round"/>
-      <circle cx="16" cy="16" r="3" fill="#e83b3b"/>
+<header class="top">
+  <div class="brand">
+    <svg class="bico" viewBox="0 0 30 30" fill="none">
+      <circle cx="15" cy="15" r="14" stroke="#e83b3b" stroke-width="1.2" opacity=".4"/>
+      <path d="M15 3C9 9,21 11,15 17C9 23,21 21,15 27" stroke="#e83b3b" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+      <circle cx="15" cy="15" r="2.5" fill="#e83b3b"/>
     </svg>
     <div>
-      <div class="brand-name">TORNADO TRACKER</div>
-      <div class="brand-sub">NWS Damage Assessment Toolkit</div>
+      <div class="bname">TORNADO TRACKER</div>
+      <div class="bsub">National Weather Service — Damage Assessment</div>
     </div>
   </div>
-  <div class="topbar-right">
-    <div class="live-badge">
-      <div class="live-dot"></div>
-      LIVE DATA
-    </div>
-    <div class="last-updated" id="last-updated-label"></div>
+  <div class="top-r">
+    <div class="live"><div class="dot"></div>LIVE</div>
+    <div class="tslbl" id="ts-lbl"></div>
   </div>
 </header>
 
-<!-- MAIN -->
-<main class="page">
+<main class="pg">
 
-  <!-- CONTROLS -->
-  <div class="section-label">Date Range</div>
-  <div class="controls-row">
-    <div class="preset-group">
-      <button class="preset-btn active" data-preset="ytd">YTD</button>
-      <button class="preset-btn" data-preset="30d">Last 30 Days</button>
-      <button class="preset-btn" data-preset="90d">Last 90 Days</button>
-      <button class="preset-btn" data-preset="1y">Past Year</button>
-      <button class="preset-btn" data-preset="custom">Custom</button>
+  <div class="sl">Date Range</div>
+  <div class="cr">
+    <div class="pset">
+      <button class="pb on" data-p="ytd">YTD</button>
+      <button class="pb" data-p="30d">30 Days</button>
+      <button class="pb" data-p="90d">90 Days</button>
+      <button class="pb" data-p="1y">Past Year</button>
+      <button class="pb" data-p="custom">Custom</button>
     </div>
-    <div class="date-inputs" id="custom-inputs" style="display:none">
-      <span class="date-label">From</span>
-      <input type="date" class="date-input" id="date-start">
-      <span class="date-label">To</span>
-      <input type="date" class="date-input" id="date-end">
+    <div class="dw" id="cw" style="display:none">
+      <span class="dl">From</span><input type="date" class="di" id="ds">
+      <span class="dl">To</span><input type="date" class="di" id="de">
     </div>
-    <button class="fetch-btn" id="fetch-btn" onclick="fetchData()">&#8635; Fetch Data</button>
+    <button class="go" id="go-btn" onclick="fetchAll()">&#8635; Update</button>
   </div>
 
-  <!-- STATUS BAR -->
-  <div class="status-bar hidden" id="status-bar">
-    <span class="status-icon" id="status-icon"></span>
-    <span id="status-text"></span>
+  <div class="st hidden" id="status">
+    <span class="si" id="si"></span>
+    <span id="st-txt"></span>
   </div>
 
-  <!-- NETWORK ERROR HELP -->
-  <div class="cors-help" id="cors-help">
-    <h3>⚠ Network Error</h3>
-    <p>Could not reach the NWS DAT API. This could be a temporary outage or connectivity issue. Try again in a moment, or visit the DAT directly: <a href="https://apps.nws.noaa.gov/DAT" target="_blank" style="color:var(--amber)">apps.nws.noaa.gov/DAT</a></p>
+  <div class="eb" id="eb">
+    <h3>Unable to retrieve data</h3>
+    <p>One or both data sources could not be reached. This is usually temporary. You can also access the data directly:</p>
+    <ul>
+      <li><a href="https://apps.dat.noaa.gov/stormdamage/damageviewer/" target="_blank">NWS Damage Assessment Toolkit viewer</a></li>
+      <li><a href="https://mesonet.agron.iastate.edu/lsr/" target="_blank">Iowa Environmental Mesonet — Local Storm Reports</a></li>
+    </ul>
   </div>
 
-  <!-- HERO STATS -->
-  <div class="section-label">Summary</div>
-  <div class="hero-grid">
-    <div class="hero-card">
-      <div class="hero-card-accent"></div>
-      <div class="hero-card-label">&#9651; Tornado Events</div>
-      <div class="hero-count" id="count-tornado">—</div>
-      <div class="hero-range" id="range-label">Select a date range and fetch data</div>
+  <div class="sl">Overview</div>
+  <div class="hero">
+    <div class="hc pri">
+      <div class="hbar" style="background:var(--red)"></div>
+      <div class="hl">Confirmed Tornadoes</div>
+      <div class="hv" id="h-dat">—</div>
+      <div><span class="sbadge dat">NWS DAT Field Surveys</span></div>
+      <div class="hsub" id="h-range" style="margin-top:8px">—</div>
     </div>
-    <div class="hero-card">
-      <div class="hero-card-accent" style="background:var(--amber)"></div>
-      <div class="hero-card-label">States Affected</div>
-      <div class="hero-count" id="count-states">—</div>
-      <div class="hero-range">Unique states with tornadoes</div>
+    <div class="hc">
+      <div class="hbar" style="background:var(--blu)"></div>
+      <div class="hl">Tornado Reports</div>
+      <div class="hv" id="h-iem">—</div>
+      <div><span class="sbadge iem">IEM Local Storm Reports</span></div>
     </div>
-    <div class="hero-card">
-      <div class="hero-card-accent" style="background:var(--text3)"></div>
-      <div class="hero-card-label">Total Assessments</div>
-      <div class="hero-count" id="count-total">—</div>
-      <div class="hero-range">All DAT event types</div>
+    <div class="hc">
+      <div class="hbar" style="background:var(--amb)"></div>
+      <div class="hl">States Affected</div>
+      <div class="hv" id="h-states">—</div>
+      <div class="hsub">Based on DAT survey data</div>
+    </div>
+    <div class="hc">
+      <div class="hbar" style="background:var(--t3)"></div>
+      <div class="hl">Injuries / Fatalities</div>
+      <div class="hv" id="h-cas" style="font-size:44px;letter-spacing:.03em">— / —</div>
+      <div class="hsub">Based on DAT survey data</div>
     </div>
   </div>
 
-  <!-- STATE BREAKDOWN -->
-  <div class="table-section">
-    <div class="table-header">
-      <div class="table-title">Tornadoes by State</div>
-      <div class="sort-btns">
-        <button class="sort-btn active" id="sort-count" onclick="sortTable('count')">By Count</button>
-        <button class="sort-btn" id="sort-alpha" onclick="sortTable('alpha')">A–Z</button>
+  <div class="sl">Enhanced Fujita Scale Distribution <span style="color:var(--t3);font-size:9px;margin-left:5px">NWS DAT confirmed surveys</span></div>
+  <div class="efrow">
+    <div class="efc"><div class="efcl ef0">EF0</div><div class="efcv ef0" id="ef0">—</div></div>
+    <div class="efc"><div class="efcl ef1">EF1</div><div class="efcv ef1" id="ef1">—</div></div>
+    <div class="efc"><div class="efcl ef2">EF2</div><div class="efcv ef2" id="ef2">—</div></div>
+    <div class="efc"><div class="efcl ef3">EF3</div><div class="efcv ef3" id="ef3">—</div></div>
+    <div class="efc"><div class="efcl ef4">EF4</div><div class="efcv ef4" id="ef4">—</div></div>
+    <div class="efc"><div class="efcl ef5">EF5</div><div class="efcv ef5" id="ef5">—</div></div>
+    <div class="efc"><div class="efcl efU">Pending</div><div class="efcv efU" id="efU">—</div></div>
+  </div>
+
+  <div class="dual" id="dual" style="display:none">
+    <div class="dc" style="border-color:rgba(232,59,59,.25)">
+      <h3 style="color:var(--red)">NWS Damage Assessment Toolkit</h3>
+      <div class="dcv" id="d2-dat" style="color:var(--red)">—</div>
+      <p>Post-event field surveys conducted by NWS meteorologists. Includes confirmed EF ratings, path length, width, injuries, and fatalities. Survey data typically available 24–72 hours after an event.</p>
+    </div>
+    <div class="dc" style="border-color:rgba(59,143,232,.25)">
+      <h3 style="color:var(--blu)">Iowa Environmental Mesonet — LSR</h3>
+      <div class="dcv" id="d2-iem" style="color:var(--blu)">—</div>
+      <p>Near-realtime Local Storm Reports issued by NWS forecast offices. Compiled from trained spotters, emergency managers, and law enforcement. Generally available within hours of an event.</p>
+    </div>
+  </div>
+
+  <div style="margin-bottom:24px">
+    <div class="th2">
+      <div class="tt">Tornadoes by State <span style="font-size:11px;color:var(--t3);font-family:var(--mono);font-weight:400">NWS DAT</span></div>
+      <div class="sg">
+        <button class="sb on" id="ss-c" onclick="sortState('count')">By Count</button>
+        <button class="sb" id="ss-a" onclick="sortState('alpha')">A–Z</button>
       </div>
     </div>
-    <div class="table-wrap" id="state-table-wrap">
-      <div class="table-empty">Fetch data to see state breakdown</div>
+    <div class="tw" id="state-tbl"><div class="te">Select a date range and fetch data to see the state breakdown.</div></div>
+  </div>
+
+  <div style="margin-bottom:24px">
+    <div class="th2">
+      <div class="tt">Tornado Survey Log <span style="font-size:11px;color:var(--t3);font-family:var(--mono);font-weight:400">NWS DAT — most recent first</span></div>
+    </div>
+    <div class="tw" id="ev-tbl"><div class="te">Select a date range and fetch data to see individual events.</div></div>
+    <div class="pgn" id="pgn" style="display:none">
+      <span class="pi" id="pgn-info"></span>
+      <button class="pp" id="pgn-p" onclick="changePage(-1)" disabled>← Previous</button>
+      <button class="pp" id="pgn-n" onclick="changePage(1)">Next →</button>
     </div>
   </div>
 
-  <!-- RECENT EVENTS -->
-  <div class="events-section">
-    <div class="table-header">
-      <div class="table-title">Recent Tornado Events</div>
-      <div class="sort-btns">
-        <button class="sort-btn active" style="color:var(--text3); border-color:var(--border)">Most Recent</button>
-      </div>
-    </div>
-    <div class="table-wrap" id="events-table-wrap">
-      <div class="table-empty">Fetch data to see recent events</div>
-    </div>
-    <div class="pagination" id="pagination" style="display:none">
-      <span class="page-info" id="page-info"></span>
-      <button class="page-btn" id="prev-btn" onclick="changePage(-1)" disabled>&#8592; Prev</button>
-      <button class="page-btn" id="next-btn" onclick="changePage(1)">Next &#8594;</button>
-    </div>
-  </div>
-
-  <footer class="footer">
-    Data source: <a href="https://apps.nws.noaa.gov/DAT" target="_blank">NWS Damage Assessment Toolkit (DAT)</a> &mdash;
-    National Weather Service / NOAA &mdash;
-    Queries the public DAT API at <code style="color:var(--text2)">apps.nws.noaa.gov/DAT/services/eventList</code>.
-    DAT captures post-storm field damage surveys; events may have a 24–72 hour reporting lag.
+  <footer class="foot">
+    Data sourced from the <a href="https://services.dat.noaa.gov/arcgis/rest/services/nws_damageassessmenttoolkit/DamageViewer/FeatureServer/1" target="_blank">NWS Damage Assessment Toolkit</a> (NOAA/NWS)
+    and the <a href="https://mesonet.agron.iastate.edu/request/gis/lsrs.phtml" target="_blank">Iowa Environmental Mesonet Local Storm Report Archive</a> (Iowa State University).
+    All data is preliminary. Official severe weather statistics are published by the
+    <a href="https://www.ncdc.noaa.gov/IPS/sd/sd.html" target="_blank">National Centers for Environmental Information</a> in the Storm Data publication.
   </footer>
 </main>
 
 <script>
-  // ---- STATE ----
-  const API_BASE = 'https://apps.nws.noaa.gov/DAT/services/eventList';
-  let allTornadoes = [];
-  let stateData = {};
-  let currentPage = 1;
-  const PAGE_SIZE = 15;
-  let sortMode = 'count';
-  let currentPreset = 'ytd';
+/* ── ENDPOINTS ─────────────────────────────────────── */
+const DAT = 'https://services.dat.noaa.gov/arcgis/rest/services/nws_damageassessmenttoolkit/DamageViewer/FeatureServer/1/query';
+const IEM = 'https://mesonet.agron.iastate.edu/cgi-bin/request/gis/lsr.py';
+const PG  = 15;
 
-  // ---- DATE HELPERS ----
-  function fmt(d) {
-    return d.toISOString().split('T')[0];
-  }
-  function today() { return new Date(); }
-  function daysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return d; }
-  function yearStart() { const d = new Date(); d.setMonth(0, 1); return d; }
-  function yearAgo() { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d; }
+/* ── STATE ─────────────────────────────────────────── */
+let datEvs = [], iemCnt = null, stMap = {}, sortMode = 'count', curPg = 1, preset = 'ytd';
 
-  function getDateRange(preset) {
-    const end = fmt(today());
-    if (preset === 'ytd') return { start: fmt(yearStart()), end };
-    if (preset === '30d') return { start: fmt(daysAgo(30)), end };
-    if (preset === '90d') return { start: fmt(daysAgo(90)), end };
-    if (preset === '1y') return { start: fmt(yearAgo()), end };
-    if (preset === 'custom') {
-      return {
-        start: document.getElementById('date-start').value,
-        end: document.getElementById('date-end').value
-      };
+/* ── DATES ─────────────────────────────────────────── */
+const fmt  = d => d.toISOString().split('T')[0];
+const now  = () => new Date();
+const ago  = n => { const d=new Date(); d.setDate(d.getDate()-n); return d; };
+const ytd  = () => { const d=new Date(); d.setMonth(0,1); return d; };
+const yr1  = () => { const d=new Date(); d.setFullYear(d.getFullYear()-1); return d; };
+function getRange() {
+  if (preset==='ytd')    return {s:fmt(ytd()),   e:fmt(now())};
+  if (preset==='30d')    return {s:fmt(ago(30)), e:fmt(now())};
+  if (preset==='90d')    return {s:fmt(ago(90)), e:fmt(now())};
+  if (preset==='1y')     return {s:fmt(yr1()),   e:fmt(now())};
+  if (preset==='custom') return {s:document.getElementById('ds').value, e:document.getElementById('de').value};
+}
+
+/* ── PRESET BTNS ───────────────────────────────────── */
+document.querySelectorAll('.pb').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.pb').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); preset = b.dataset.p;
+  const cw = document.getElementById('cw');
+  if (preset==='custom') {
+    cw.style.display='flex';
+    if (!document.getElementById('ds').value) {
+      document.getElementById('ds').value=fmt(ago(30));
+      document.getElementById('de').value=fmt(now());
     }
+  } else cw.style.display='none';
+}));
+
+/* ── STATUS ────────────────────────────────────────── */
+function setStatus(type, msg) {
+  const el=document.getElementById('status'), ic=document.getElementById('si'), tx=document.getElementById('st-txt');
+  el.className='st '+type; tx.textContent=msg;
+  ic.textContent={loading:'⟳',ok:'✓',warn:'⚠',err:'✕'}[type]||'';
+  ic.classList.toggle('spin', type==='loading');
+}
+const hideSt = () => document.getElementById('status').className='st hidden';
+
+/* ── LOADING ───────────────────────────────────────── */
+function setLoading(on) {
+  ['h-dat','h-iem','h-states','h-cas'].forEach(id=>{
+    document.getElementById(id).innerHTML=on?'<span class="sk"></span>':'—';
+  });
+  ['ef0','ef1','ef2','ef3','ef4','ef5','efU'].forEach(id=>
+    document.getElementById(id).textContent=on?'…':'—'
+  );
+  document.getElementById('go-btn').disabled=on;
+}
+
+/* ── ANIMATE ───────────────────────────────────────── */
+function animNum(el, n) {
+  let c=0; const s=Math.max(1,Math.ceil(n/28));
+  const t=setInterval(()=>{ c=Math.min(c+s,n); el.textContent=c.toLocaleString(); if(c>=n)clearInterval(t); },28);
+}
+
+/* ── FETCH ALL ─────────────────────────────────────── */
+async function fetchAll() {
+  const {s,e} = getRange();
+  if (!s||!e) { setStatus('err','Select valid dates.'); return; }
+  if (s>e)    { setStatus('err','Start must be before end.'); return; }
+  setLoading(true);
+  document.getElementById('eb').classList.remove('show');
+  document.getElementById('dual').style.display='none';
+  setStatus('loading',`Retrieving data for ${s} through ${e}…`);
+
+  const [dr, ir] = await Promise.allSettled([fetchDAT(s,e), fetchIEM(s,e)]);
+
+  setLoading(false);
+  const dOk=dr.status==='fulfilled', iOk=ir.status==='fulfilled';
+  datEvs = dOk ? dr.value : [];
+  iemCnt = iOk ? ir.value : null;
+
+  if (!dOk&&!iOk) {
+    setStatus('err','Both data sources are currently unavailable. See links below.');
+    document.getElementById('eb').classList.add('show');
+    console.error('DAT:',dr.reason,'  IEM:',ir.reason);
+    return;
   }
 
-  // ---- PRESET BUTTONS ----
-  document.querySelectorAll('.preset-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentPreset = btn.dataset.preset;
-      const customInputs = document.getElementById('custom-inputs');
-      if (currentPreset === 'custom') {
-        customInputs.style.display = 'flex';
-        // Default custom dates
-        if (!document.getElementById('date-start').value) {
-          document.getElementById('date-start').value = fmt(daysAgo(30));
-          document.getElementById('date-end').value = fmt(today());
-        }
-      } else {
-        customInputs.style.display = 'none';
-      }
-    });
+  renderAll(s,e);
+  const parts=[];
+  parts.push(dOk ? `DAT: ${datEvs.length} confirmed tornado surveys` : 'DAT: unavailable');
+  parts.push(iOk ? `IEM: ${iemCnt} local storm reports`              : 'IEM: unavailable');
+  setStatus(dOk&&iOk?'ok':'warn', parts.join('  ·  '));
+}
+
+/* ── FETCH DAT ─────────────────────────────────────── */
+async function fetchDAT(s,e) {
+  const ef = "'EF0','EF1','EF2','EF3','EF3+','EF4','EF5','EF Unknown','N/A','UNKNOWN'";
+  const where = encodeURIComponent(`stormdate >= DATE '${s}' AND stormdate <= DATE '${e}' AND efscale IN (${ef})`);
+  const flds  = 'event_id,stormdate,startlat,startlon,efscale,injuries,fatalities,length,width,wfo,comments';
+  const url   = `${DAT}?where=${where}&outFields=${flds}&orderByFields=stormdate+DESC&resultRecordCount=2000&f=json`;
+  const res   = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const j = await res.json();
+  if (j.error) throw new Error(j.error.message);
+  return (j.features||[]).map(f=>f.attributes);
+}
+
+/* ── FETCH IEM LSR CSV ─────────────────────────────── */
+async function fetchIEM(s,e) {
+  const url = `${IEM}?wfo=ALL&sts=${s}T00:00Z&ets=${e}T23:59Z&type=T&fmt=csv`;
+  const res  = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const txt  = await res.text();
+  return txt.trim().split('\n').slice(1).filter(l=>l.trim()).length;
+}
+
+/* ── RENDER ────────────────────────────────────────── */
+function renderAll(s,e) {
+  const total=datEvs.length;
+  const ef={};
+  let inj=0, fat=0;
+  stMap={};
+
+  datEvs.forEach(ev=>{
+    const scale=(ev.efscale||'').toUpperCase().replace('EF3+','EF3').replace('EF UNKNOWN','UNK');
+    const key = ['EF0','EF1','EF2','EF3','EF4','EF5'].includes(scale)?scale:'UNK';
+    ef[key]=(ef[key]||0)+1;
+    const st=WFO_ST[ev.wfo?.toUpperCase()?.trim()]||null;
+    if (st) stMap[st]=(stMap[st]||0)+1;
+    if (ev.injuries>0)   inj+=ev.injuries;
+    if (ev.fatalities>0) fat+=ev.fatalities;
   });
 
-  // ---- STATUS ----
-  function setStatus(type, text) {
-    const bar = document.getElementById('status-bar');
-    const icon = document.getElementById('status-icon');
-    const label = document.getElementById('status-text');
-    bar.className = 'status-bar ' + type;
-    label.textContent = text;
-    const icons = { loading: '⟳', success: '✓', error: '✕', warn: '⚠' };
-    icon.textContent = icons[type] || '';
-    if (type === 'loading') icon.classList.add('spin');
-    else icon.classList.remove('spin');
-  }
-  function hideStatus() { document.getElementById('status-bar').className = 'status-bar hidden'; }
+  const datEl=document.getElementById('h-dat');
+  const iemEl=document.getElementById('h-iem');
+  animNum(datEl, total); datEl.style.color=total>0?'var(--red)':'var(--t1)';
+  if (iemCnt!==null) { animNum(iemEl,iemCnt); iemEl.style.color=iemCnt>0?'var(--blu)':'var(--t1)'; }
+  else iemEl.textContent='N/A';
 
-  // ---- LOADING SKELETONS ----
-  function setLoading(on) {
-    const ids = ['count-tornado', 'count-states', 'count-total'];
-    ids.forEach(id => {
-      document.getElementById(id).innerHTML = on
-        ? '<span class="skeleton"></span>'
-        : (id === 'count-tornado' ? '—' : '—');
-    });
-    document.getElementById('fetch-btn').disabled = on;
-  }
+  animNum(document.getElementById('h-states'), Object.keys(stMap).length);
+  const casEl=document.getElementById('h-cas');
+  casEl.textContent=`${inj.toLocaleString()} / ${fat.toLocaleString()}`;
+  casEl.style.color=fat>0?'var(--red)':'var(--t1)';
+  document.getElementById('h-range').textContent=`${fmtD(s)} → ${fmtD(e)}`;
+  document.getElementById('ts-lbl').textContent='Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 
-  // ---- ANIMATED COUNT ----
-  function animateCount(el, target) {
-    let current = 0;
-    const step = Math.ceil(target / 30);
-    const timer = setInterval(() => {
-      current = Math.min(current + step, target);
-      el.textContent = current.toLocaleString();
-      if (current >= target) clearInterval(timer);
-    }, 30);
-  }
+  ['EF0','EF1','EF2','EF3','EF4','EF5'].forEach(k=>
+    document.getElementById(k.toLowerCase()).textContent=(ef[k]||0).toLocaleString()
+  );
+  document.getElementById('efU').textContent=(ef['UNK']||0).toLocaleString();
 
-  // ---- FETCH DATA ----
-  async function fetchData() {
-    const { start, end } = getDateRange(currentPreset);
-    if (!start || !end) { setStatus('error', 'Please select valid start and end dates.'); return; }
-    if (start > end) { setStatus('error', 'Start date must be before end date.'); return; }
+  document.getElementById('d2-dat').textContent=total.toLocaleString();
+  document.getElementById('d2-iem').textContent=iemCnt!==null?iemCnt.toLocaleString():'N/A';
+  document.getElementById('dual').style.display='grid';
 
-    setLoading(true);
-    setStatus('loading', `Fetching DAT events from ${start} to ${end}…`);
-    document.getElementById('cors-help').classList.remove('visible');
+  renderStateTable(); curPg=1; renderEventsTable();
+}
 
-    const url = `${API_BASE}?startDate=${start}&endDate=${end}`;
+/* ── STATE TABLE ───────────────────────────────────── */
+function sortState(m) {
+  sortMode=m;
+  document.getElementById('ss-c').classList.toggle('on',m==='count');
+  document.getElementById('ss-a').classList.toggle('on',m==='alpha');
+  renderStateTable();
+}
+function renderStateTable() {
+  const el=document.getElementById('state-tbl');
+  const ents=Object.entries(stMap);
+  if (!ents.length){el.innerHTML='<div class="te">No state data available for this period.</div>';return;}
+  const sorted=[...ents].sort((a,b)=>sortMode==='count'?b[1]-a[1]:a[0].localeCompare(b[0]));
+  const mx=Math.max(...ents.map(e=>e[1]));
+  el.innerHTML=`<table>
+    <thead><tr><th>State</th><th>Tornadoes</th><th>Relative</th><th>% of Total</th></tr></thead>
+    <tbody>${sorted.map(([st,n])=>`<tr>
+      <td class="tds">${ST_N[st]||st}</td>
+      <td class="tdc">${n}</td>
+      <td><div class="bw"><div class="bf" style="width:${Math.round(n/mx*100)}%"></div></div></td>
+      <td style="color:var(--t3);font-size:11px">${(n/datEvs.length*100).toFixed(1)}%</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
 
-    try {
-      const res = await fetch(url, {
-        headers: { 'Accept': 'application/json' }
-      });
+/* ── EVENTS TABLE ──────────────────────────────────── */
+function changePage(d) {
+  const tot=Math.ceil(datEvs.length/PG);
+  curPg=Math.max(1,Math.min(tot,curPg+d));
+  renderEventsTable();
+}
+function renderEventsTable() {
+  const el=document.getElementById('ev-tbl'), pgn=document.getElementById('pgn');
+  if (!datEvs.length){el.innerHTML='<div class="te">No survey records found for this period.</div>';pgn.style.display='none';return;}
+  const slice=datEvs.slice((curPg-1)*PG, curPg*PG);
+  const totPg=Math.ceil(datEvs.length/PG);
+  el.innerHTML=`<table>
+    <thead><tr><th>Date</th><th>EF Rating</th><th>WFO</th><th>Lat</th><th>Lon</th><th>Path Length (mi)</th><th>Path Width (yds)</th><th>Injuries</th><th>Fatalities</th></tr></thead>
+    <tbody>${slice.map(ev=>{
+      const d=ev.stormdate?new Date(ev.stormdate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—';
+      const ef=(ev.efscale||'?').toUpperCase();
+      const ec=ef==='EF5'?'ef5':ef==='EF4'?'ef4':ef.startsWith('EF3')?'ef3':ef==='EF2'?'ef2':ef==='EF1'?'ef1':ef==='EF0'?'ef0':'efU';
+      const efbg={ef0:'rgba(0,197,181,.13)',ef1:'rgba(85,255,0,.12)',ef2:'rgba(255,255,0,.11)',ef3:'rgba(232,128,0,.12)',ef4:'rgba(230,0,0,.12)',ef5:'rgba(168,0,132,.12)',efU:'rgba(80,86,106,.18)'}[ec];
+      const len=ev.length>0?ev.length.toFixed(1):'—';
+      const wid=ev.width>0?ev.width:'—';
+      const inj=ev.injuries>0?`<span style="color:var(--amb)">${ev.injuries}</span>`:'0';
+      const fat=ev.fatalities>0?`<span style="color:var(--red)">${ev.fatalities}</span>`:'0';
+      return `<tr>
+        <td style="color:var(--t2)">${d}</td>
+        <td><span class="eftag ${ec}" style="background:${efbg}">${ev.efscale||'?'}</span></td>
+        <td><span style="background:var(--bg3);padding:1px 6px;border-radius:3px;font-size:11px">${ev.wfo||'—'}</span></td>
+        <td style="font-size:11px;color:var(--t3)">${ev.startlat?ev.startlat.toFixed(3):'—'}</td>
+        <td style="font-size:11px;color:var(--t3)">${ev.startlon?ev.startlon.toFixed(3):'—'}</td>
+        <td>${len}</td><td>${wid}</td><td>${inj}</td><td>${fat}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+  pgn.style.display='flex';
+  document.getElementById('pgn-info').textContent=`Page ${curPg} of ${totPg} (${datEvs.length} total)`;
+  document.getElementById('pgn-p').disabled=curPg<=1;
+  document.getElementById('pgn-n').disabled=curPg>=totPg;
+}
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+/* ── FORMAT DATE ───────────────────────────────────── */
+function fmtD(d) {
+  if (!d) return '';
+  const [y,m,dy]=d.split('-');
+  return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m-1]+' '+parseInt(dy)+', '+y;
+}
 
-      const raw = await res.json();
-      processData(raw, start, end);
+/* ── WFO → STATE ───────────────────────────────────── */
+const WFO_ST = {
+  ABQ:'NM',ABR:'SD',AFC:'AK',AFG:'AK',AJK:'AK',AKQ:'VA',ALY:'NY',AMA:'TX',APX:'MI',ARX:'WI',
+  BGM:'NY',BIS:'ND',BMX:'AL',BOI:'ID',BOU:'CO',BOX:'MA',BRO:'TX',BTV:'VT',BUF:'NY',BYZ:'MT',
+  CAE:'SC',CAR:'ME',CHS:'SC',CLE:'OH',CLT:'NC',CRP:'TX',CTP:'PA',CYS:'WY',
+  DDC:'KS',DLH:'MN',DMX:'IA',DTX:'MI',DVN:'IA',
+  EAX:'MO',EKA:'CA',EPZ:'NM',EWX:'TX',
+  FFC:'GA',FGF:'ND',FGZ:'AZ',FSD:'SD',FWD:'TX',
+  GGW:'MT',GID:'NE',GJT:'CO',GLD:'KS',GRB:'WI',GRR:'MI',GSP:'SC',GYX:'ME',
+  HFO:'HI',HGX:'TX',HNX:'CA',HUN:'AL',
+  ICT:'KS',ILM:'NC',ILN:'OH',ILX:'IL',IND:'IN',IWX:'IN',
+  JAX:'FL',JKL:'KY',KEY:'FL',
+  LBF:'NE',LCH:'LA',LIX:'LA',LKN:'NV',LMK:'KY',LOT:'IL',LOX:'CA',LSX:'MO',LUB:'TX',LWX:'MD',LZK:'AR',
+  MAF:'TX',MEG:'TN',MFL:'FL',MFR:'OR',MHX:'NC',MKX:'WI',MLB:'FL',MOB:'AL',MPX:'MN',MQT:'MI',MRX:'TN',MSO:'MT',MTR:'CA',
+  OAX:'NE',OHX:'TN',OKX:'NY',OTX:'WA',OUN:'OK',
+  PAH:'KY',PBZ:'PA',PDT:'OR',PHI:'PA',PIH:'ID',PPG:'AS',PSR:'AZ',PUB:'CO',
+  RAH:'NC',RAX:'NC',REV:'NV',RIW:'WY',RLX:'WV',RNK:'VA',
+  SEW:'WA',SGF:'MO',SHV:'LA',SJT:'TX',SJU:'PR',SLC:'UT',STO:'CA',
+  TAE:'FL',TBW:'FL',TFX:'MT',TOP:'KS',TSA:'OK',TWC:'AZ',
+  UNR:'SD',VEF:'NV',
+};
 
-    } catch (err) {
-      setLoading(false);
-      const isNetwork = err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.name === 'TypeError';
-      if (isNetwork) {
-        setStatus('error', 'Network error — could not reach NWS DAT API. See guidance below.');
-        document.getElementById('cors-help').classList.add('visible');
-      } else {
-        setStatus('error', `Error: ${err.message}`);
-      }
-      console.error('DAT API error:', err);
-    }
-  }
+/* ── STATE NAMES ───────────────────────────────────── */
+const ST_N = {
+  AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',
+  CT:'Connecticut',DE:'Delaware',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',
+  IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',
+  ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',
+  MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',
+  NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',
+  NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',
+  PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',
+  TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',
+  WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',
+  DC:'D.C.',PR:'Puerto Rico',VI:'Virgin Islands',GU:'Guam',AS:'Am. Samoa',
+};
 
-  // ---- PARSE & DISPLAY ----
-  function isTornado(event) {
-    const typeFields = [
-      event.type, event.eventType, event.event_type,
-      event.category, event.hazard, event.phenomenon
-    ];
-    return typeFields.some(f =>
-      f && (
-        String(f).toUpperCase().includes('TORNADO') ||
-        String(f).toUpperCase() === 'TOR' ||
-        String(f).toUpperCase() === 'TORN'
-      )
-    );
-  }
-
-  function extractState(event) {
-    return (event.state || event.stateCode || event.state_code || '').toUpperCase().trim() || 'UNK';
-  }
-
-  function extractDate(event) {
-    return event.beginDate || event.begin_date || event.date || event.eventDate || event.survey_date || '';
-  }
-
-  function extractWFO(event) {
-    return event.wfo || event.wfoId || event.wfo_id || event.office || '';
-  }
-
-  function extractLocation(event) {
-    return event.location || event.city || event.county || event.area || '';
-  }
-
-  function processData(raw, start, end) {
-    // Normalise to array
-    let events = Array.isArray(raw) ? raw
-      : (raw.events || raw.data || raw.results || raw.eventList || []);
-
-    if (!Array.isArray(events)) {
-      // Try wrapping
-      events = [raw];
-    }
-
-    const tornadoes = events.filter(isTornado);
-    allTornadoes = tornadoes.sort((a, b) => extractDate(b).localeCompare(extractDate(a)));
-
-    // State counts
-    stateData = {};
-    tornadoes.forEach(e => {
-      const s = extractState(e);
-      stateData[s] = (stateData[s] || 0) + 1;
-    });
-
-    const stateCount = Object.keys(stateData).filter(s => s !== 'UNK' && s !== '').length;
-
-    // Update hero counts
-    setLoading(false);
-    const countEl = document.getElementById('count-tornado');
-    const stateEl = document.getElementById('count-states');
-    const totalEl = document.getElementById('count-total');
-    animateCount(countEl, tornadoes.length);
-    animateCount(stateEl, stateCount);
-    animateCount(totalEl, events.length);
-    countEl.style.color = tornadoes.length > 0 ? 'var(--red)' : 'var(--text)';
-
-    // Range label
-    document.getElementById('range-label').textContent =
-      `${formatDate(start)} → ${formatDate(end)}`;
-
-    // Last updated
-    document.getElementById('last-updated-label').textContent =
-      'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    // Tables
-    renderStateTable();
-    currentPage = 1;
-    renderEventsTable();
-
-    const note = tornadoes.length === 0
-      ? ' (No tornado assessments found for this period — try a wider range)'
-      : '';
-    setStatus('success', `Loaded ${events.length.toLocaleString()} total events · ${tornadoes.length.toLocaleString()} tornado assessments${note}`);
-  }
-
-  function formatDate(d) {
-    if (!d) return '';
-    const parts = d.split('-');
-    if (parts.length === 3) {
-      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      return `${months[parseInt(parts[1]) - 1]} ${parseInt(parts[2])}, ${parts[0]}`;
-    }
-    return d;
-  }
-
-  // ---- STATE TABLE ----
-  function sortTable(mode) {
-    sortMode = mode;
-    document.getElementById('sort-count').classList.toggle('active', mode === 'count');
-    document.getElementById('sort-alpha').classList.toggle('active', mode === 'alpha');
-    renderStateTable();
-  }
-
-  function renderStateTable() {
-    const wrap = document.getElementById('state-table-wrap');
-    const entries = Object.entries(stateData);
-    if (entries.length === 0) {
-      wrap.innerHTML = '<div class="table-empty">No tornado data to display</div>';
-      return;
-    }
-
-    const sorted = entries.sort((a, b) =>
-      sortMode === 'count' ? b[1] - a[1] : a[0].localeCompare(b[0])
-    );
-    const max = Math.max(...entries.map(e => e[1]));
-
-    const rows = sorted.map(([state, count]) => `
-      <tr>
-        <td class="td-state">${STATE_NAMES[state] || state}</td>
-        <td class="td-count">${count}</td>
-        <td style="min-width:120px">
-          <div class="bar-wrap">
-            <div class="bar-fill" style="width:${Math.round((count/max)*100)}%"></div>
-          </div>
-        </td>
-        <td class="event-row-date" style="color:var(--text3);font-size:11px">${((count/allTornadoes.length)*100).toFixed(1)}%</td>
-      </tr>
-    `).join('');
-
-    wrap.innerHTML = `
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>State</th>
-            <th>Tornadoes</th>
-            <th>Relative</th>
-            <th>% of Total</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    `;
-  }
-
-  // ---- EVENTS TABLE ----
-  function changePage(dir) {
-    const totalPages = Math.ceil(allTornadoes.length / PAGE_SIZE);
-    currentPage = Math.max(1, Math.min(totalPages, currentPage + dir));
-    renderEventsTable();
-  }
-
-  function renderEventsTable() {
-    const wrap = document.getElementById('events-table-wrap');
-    const pg = document.getElementById('pagination');
-    if (allTornadoes.length === 0) {
-      wrap.innerHTML = '<div class="table-empty">No tornado events to display</div>';
-      pg.style.display = 'none';
-      return;
-    }
-
-    const start = (currentPage - 1) * PAGE_SIZE;
-    const slice = allTornadoes.slice(start, start + PAGE_SIZE);
-    const totalPages = Math.ceil(allTornadoes.length / PAGE_SIZE);
-
-    const rows = slice.map(e => {
-      const date = formatDate(extractDate(e).split('T')[0]);
-      const state = extractState(e);
-      const wfo = extractWFO(e);
-      const loc = extractLocation(e);
-      return `
-        <tr>
-          <td><span class="event-row-type">TORNADO</span></td>
-          <td class="event-row-date">${date || '—'}</td>
-          <td class="td-state">${STATE_NAMES[state] || state || '—'}</td>
-          <td>${loc || '—'}</td>
-          <td>${wfo ? `<span class="event-row-wfo">${wfo}</span>` : '—'}</td>
-        </tr>
-      `;
-    }).join('');
-
-    wrap.innerHTML = `
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>Date</th>
-            <th>State</th>
-            <th>Location</th>
-            <th>WFO</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    `;
-
-    pg.style.display = 'flex';
-    document.getElementById('page-info').textContent =
-      `Page ${currentPage} of ${totalPages}  (${allTornadoes.length} total)`;
-    document.getElementById('prev-btn').disabled = currentPage <= 1;
-    document.getElementById('next-btn').disabled = currentPage >= totalPages;
-  }
-
-  // ---- STATE NAME MAP ----
-  const STATE_NAMES = {
-    AL:'Alabama', AK:'Alaska', AZ:'Arizona', AR:'Arkansas', CA:'California',
-    CO:'Colorado', CT:'Connecticut', DE:'Delaware', FL:'Florida', GA:'Georgia',
-    HI:'Hawaii', ID:'Idaho', IL:'Illinois', IN:'Indiana', IA:'Iowa',
-    KS:'Kansas', KY:'Kentucky', LA:'Louisiana', ME:'Maine', MD:'Maryland',
-    MA:'Massachusetts', MI:'Michigan', MN:'Minnesota', MS:'Mississippi',
-    MO:'Missouri', MT:'Montana', NE:'Nebraska', NV:'Nevada', NH:'New Hampshire',
-    NJ:'New Jersey', NM:'New Mexico', NY:'New York', NC:'North Carolina',
-    ND:'North Dakota', OH:'Ohio', OK:'Oklahoma', OR:'Oregon', PA:'Pennsylvania',
-    RI:'Rhode Island', SC:'South Carolina', SD:'South Dakota', TN:'Tennessee',
-    TX:'Texas', UT:'Utah', VT:'Vermont', VA:'Virginia', WA:'Washington',
-    WV:'West Virginia', WI:'Wisconsin', WY:'Wyoming', DC:'D.C.',
-    PR:'Puerto Rico', VI:'Virgin Islands', GU:'Guam'
-  };
-
-  // ---- INIT: Auto-fetch YTD on load ----
-  window.addEventListener('load', () => {
-    fetchData();
-  });
+window.addEventListener('load', ()=>fetchAll());
 </script>
 </body>
 </html>
