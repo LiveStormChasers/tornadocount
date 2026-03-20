@@ -402,19 +402,70 @@ async function fetchAll() {
   setStatus(dOk&&iOk?'ok':'warn', parts.join('  ·  '));
 }
 
-/* ── COORDINATE → STATE (FCC Census API) ─────────────
-   Deduplicates by ~0.1° grid, batches 8 at a time,
-   caches results so re-fetching the same range is instant.
-   Falls back to WFO lookup if FCC call fails.           */
+/* ── STATE RESOLUTION — 3-tier logic ──────────────────
+  Tier 1: WFO maps to exactly one state → trust it, no API call.
+  Tier 2: WFO covers multiple states → use FCC coords to pick;
+          if FCC returns a state not in that WFO's territory,
+          fall back to WFO primary state.
+  Tier 3: No WFO → FCC coords only.
+  Result: border-county events (Grant/Osage OK on KS line, etc.)
+  stay in the correct state because OUN/TSA are OK-only WFOs. */
+
+// States each multi-state WFO can legitimately claim
+const WFO_MULTI = {
+  ABR:['SD','ND','MN'],  ARX:['WI','MN','IA'],  BGM:['NY','PA'],
+  BIS:['ND','SD','MT'],  BOU:['CO','WY'],        BTV:['VT','NY'],
+  BUF:['NY','PA'],       BYZ:['MT','WY'],        CAR:['ME','NH'],
+  CLE:['OH','PA'],       CLT:['NC','SC'],        CRP:['TX','OK'],
+  CTP:['PA','NY','MD'],  CYS:['WY','CO','NE'],   DDC:['KS','CO','OK'],
+  DLH:['MN','WI'],       DMX:['IA','IL','NE'],   DTX:['MI','OH'],
+  DVN:['IA','IL'],       EAX:['MO','KS','IA'],   EPZ:['NM','TX'],
+  FGF:['ND','MN'],       FGZ:['AZ','NM'],        FSD:['SD','ND','MN','NE'],
+  FWD:['TX','OK'],       GGW:['MT','ND'],        GID:['NE','KS','CO'],
+  GJT:['CO','UT'],       GLD:['KS','CO','NE'],   GRB:['WI','MI'],
+  GRR:['MI','IN'],       GSP:['SC','NC'],        ICT:['KS','OK'],
+  ILN:['OH','IN','KY'],  ILX:['IL','IN','MO'],   IND:['IN','IL'],
+  IWX:['IN','OH','MI'],  JAX:['FL','GA'],        JKL:['KY','WV','VA'],
+  LBF:['NE','KS','CO'],  LCH:['LA','TX'],        LIX:['LA','MS'],
+  LKN:['NV','ID'],       LMK:['KY','IN','TN'],   LOT:['IL','IN','WI'],
+  LSX:['MO','IL'],       LZK:['AR','MO','TN'],   MAF:['TX','NM'],
+  MEG:['TN','AR','MS'],  MFL:['FL','GA'],        MHX:['NC','VA'],
+  MKX:['WI','IL'],       MLB:['FL','GA'],        MOB:['AL','MS','FL'],
+  MPX:['MN','WI','ND'],  MQT:['MI','WI'],        MRX:['TN','VA','KY'],
+  OAX:['NE','IA','KS'],  OHX:['TN','KY'],        PAH:['KY','IL','MO'],
+  PBZ:['PA','WV','OH'],  PHI:['PA','NJ','DE','MD'], RIW:['WY','CO'],
+  RLX:['WV','VA','KY'],  RNK:['VA','WV','NC'],   SEW:['WA','OR'],
+  SGF:['MO','AR','OK'],  SHV:['LA','TX','AR'],   SJT:['TX','NM'],
+  TOP:['KS','NE','MO'],  TWC:['AZ','NM'],        UNR:['SD','WY','NE'],
+};
+
+// WFO primary state (used when FCC is out-of-territory)
+// Single-state WFOs aren't in WFO_MULTI, so WFO_ST is definitive for them.
 const coordCache = {};
 
 async function resolveStates(events) {
+  // Determine which events actually need an FCC lookup
+  const needsFCC = (ev) => {
+    const wfo = ev.wfo?.toUpperCase()?.trim();
+    if (!wfo) return true;                          // no WFO → need coords
+    if (WFO_MULTI[wfo]) return true;               // multi-state WFO → need coords
+    return false;                                   // single-state WFO → trust it
+  };
+
+  // Assign single-state WFO events immediately
+  events.forEach(ev => {
+    const wfo = ev.wfo?.toUpperCase()?.trim();
+    if (wfo && !WFO_MULTI[wfo] && WFO_ST[wfo]) {
+      ev._state = WFO_ST[wfo];
+    }
+  });
+
+  // Collect unique coord keys for multi-state / no-WFO events
   const keyMap = {};
-  events.forEach((ev, i) => {
-    if (!ev.startlat || !ev.startlon) return;
-    const key = `${ev.startlat.toFixed(1)},${ev.startlon.toFixed(1)}`;
-    if (!keyMap[key]) keyMap[key] = { lat: ev.startlat, lon: ev.startlon, indices: [] };
-    keyMap[key].indices.push(i);
+  events.forEach(ev => {
+    if (!needsFCC(ev) || !ev.startlat || !ev.startlon) return;
+    const key = `${ev.startlat.toFixed(2)},${ev.startlon.toFixed(2)}`;
+    if (!keyMap[key]) keyMap[key] = { lat: ev.startlat, lon: ev.startlon };
   });
 
   const uncached = Object.entries(keyMap).filter(([k]) => !coordCache[k]);
@@ -439,17 +490,37 @@ async function resolveStates(events) {
     }
   }
 
-  events.forEach((ev) => {
-    if (!ev.startlat || !ev.startlon) return;
-    const key = `${ev.startlat.toFixed(1)},${ev.startlon.toFixed(1)}`;
-    ev._state = coordCache[key] || WFO_ST[ev.wfo?.toUpperCase()?.trim()] || null;
+  // Assign states for multi-state / no-WFO events with tiebreaker logic
+  events.forEach(ev => {
+    if (!needsFCC(ev)) return; // already assigned above
+    const wfo = ev.wfo?.toUpperCase()?.trim();
+    const key = `${ev.startlat?.toFixed(2)},${ev.startlon?.toFixed(2)}`;
+    const fccState = coordCache[key] || null;
+
+    if (fccState) {
+      // If WFO is multi-state, verify FCC result is in WFO territory
+      if (wfo && WFO_MULTI[wfo]) {
+        const territory = WFO_MULTI[wfo];
+        if (territory.includes(fccState)) {
+          ev._state = fccState;            // FCC agrees with WFO territory ✓
+        } else {
+          ev._state = territory[0];        // FCC out-of-territory → use WFO primary
+        }
+      } else {
+        ev._state = fccState;              // no WFO → trust FCC fully
+      }
+    } else {
+      // FCC failed → fall back to WFO primary
+      ev._state = (wfo && WFO_ST[wfo]) ? WFO_ST[wfo] : null;
+    }
   });
 }
 
 /* ── FETCH DAT ─────────────────────────────────────── */
 async function fetchDAT(s,e) {
-  const ef = "'EF0','EF1','EF2','EF3','EF3+','EF4','EF5','EF Unknown','N/A','UNKNOWN'";
-  const where = encodeURIComponent(`stormdate >= DATE '${s}' AND stormdate <= DATE '${e}' AND efscale IN (${ef})`);
+  // Layer 1 of the DAT FeatureServer IS the tornado damage lines layer — every record is a tornado.
+  // No efscale filter needed; filtering by it previously dropped NULL/pending-review surveys.
+  const where = encodeURIComponent(`stormdate >= DATE '${s}' AND stormdate <= DATE '${e}'`);
   const flds  = 'event_id,stormdate,startlat,startlon,efscale,injuries,fatalities,length,width,wfo,comments';
   const url   = `${DAT}?where=${where}&outFields=${flds}&orderByFields=stormdate+DESC&resultRecordCount=2000&f=json`;
   const res   = await fetch(url);
