@@ -91,8 +91,9 @@ body{background:var(--bg);color:var(--t1);font-family:var(--mono);min-height:100
 .eb ul{padding-left:16px;margin-top:6px}
 
 /* hero */
-.hero{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:12px;margin-bottom:24px}
-@media(max-width:680px){.hero{grid-template-columns:1fr 1fr}}
+.hero{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr 1fr;gap:12px;margin-bottom:24px}
+@media(max-width:900px){.hero{grid-template-columns:1fr 1fr 1fr}}
+@media(max-width:580px){.hero{grid-template-columns:1fr 1fr}}
 .hc{background:var(--bg2);border:1px solid var(--bdr);border-radius:12px;
   padding:20px 20px 16px;position:relative;overflow:hidden}
 .hc.pri{border-color:rgba(232,59,59,.3);background:linear-gradient(135deg,rgba(232,59,59,.06) 0%,var(--bg2) 55%)}
@@ -233,6 +234,13 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
       <div class="hv" id="h-iem">—</div>
       <div><span class="sbadge iem">IEM Local Storm Reports</span></div>
     </div>
+    <div class="hc" id="ok-card" style="border-color:rgba(245,166,35,.25)">
+      <div class="hbar" style="background:var(--amb)"></div>
+      <div class="hl">Oklahoma Count</div>
+      <div class="hv" id="h-ok" style="color:var(--amb)">—</div>
+      <div><span class="sbadge" style="background:var(--amb-d);color:var(--amb);border:1px solid rgba(245,166,35,.2)">NWS Norman (OUN)</span></div>
+      <div class="hsub" id="h-ok-sub" style="margin-top:6px">—</div>
+    </div>
     <div class="hc">
       <div class="hbar" style="background:var(--amb)"></div>
       <div class="hl">States Affected</div>
@@ -306,10 +314,12 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
 /* ── ENDPOINTS ─────────────────────────────────────── */
 const DAT = 'https://services.dat.noaa.gov/arcgis/rest/services/nws_damageassessmenttoolkit/DamageViewer/FeatureServer/1/query';
 const IEM = 'https://mesonet.agron.iastate.edu/cgi-bin/request/gis/lsr.py';
+// ↓ Replace with your deployed Cloudflare Worker URL after deployment
+const WORKER = 'https://YOUR-WORKER.YOUR-SUBDOMAIN.workers.dev';
 const PG  = 15;
 
 /* ── STATE ─────────────────────────────────────────── */
-let datEvs = [], iemCnt = null, stMap = {}, sortMode = 'count', curPg = 1, preset = 'ytd';
+let datEvs = [], iemCnt = null, okData = null, stMap = {}, sortMode = 'count', curPg = 1, preset = 'ytd';
 
 /* ── DATES ─────────────────────────────────────────── */
 const fmt  = d => d.toISOString().split('T')[0];
@@ -350,7 +360,7 @@ const hideSt = () => document.getElementById('status').className='st hidden';
 
 /* ── LOADING ───────────────────────────────────────── */
 function setLoading(on) {
-  ['h-dat','h-iem','h-states','h-cas'].forEach(id=>{
+  ['h-dat','h-iem','h-ok','h-states','h-cas'].forEach(id=>{
     document.getElementById(id).innerHTML=on?'<span class="sk"></span>':'—';
   });
   ['ef0','ef1','ef2','ef3','ef4','ef5','efU'].forEach(id=>
@@ -375,12 +385,21 @@ async function fetchAll() {
   document.getElementById('dual').style.display='none';
   setStatus('loading',`Retrieving data for ${s} through ${e}…`);
 
-  const [dr, ir] = await Promise.allSettled([fetchDAT(s,e), fetchIEM(s,e)]);
+  // Derive year(s) covered by range for OUN fetch
+  const startYear = parseInt(s.split('-')[0]);
+  const endYear   = parseInt(e.split('-')[0]);
+
+  const [dr, ir, okr] = await Promise.allSettled([
+    fetchDAT(s,e),
+    fetchIEM(s,e),
+    fetchOUN(startYear, endYear),
+  ]);
 
   setLoading(false);
-  const dOk=dr.status==='fulfilled', iOk=ir.status==='fulfilled';
+  const dOk=dr.status==='fulfilled', iOk=ir.status==='fulfilled', okOk=okr.status==='fulfilled';
   datEvs = dOk ? dr.value : [];
   iemCnt = iOk ? ir.value : null;
+  okData = okOk ? okr.value : null;
 
   if (!dOk&&!iOk) {
     setStatus('err','Both data sources are currently unavailable. See links below.');
@@ -397,9 +416,37 @@ async function fetchAll() {
 
   renderAll(s,e);
   const parts=[];
-  parts.push(dOk ? `DAT: ${datEvs.length} confirmed tornado surveys` : 'DAT: unavailable');
-  parts.push(iOk ? `IEM: ${iemCnt} local storm reports`              : 'IEM: unavailable');
+  parts.push(dOk  ? `DAT: ${datEvs.length} confirmed tornado surveys` : 'DAT: unavailable');
+  parts.push(iOk  ? `IEM: ${iemCnt} local storm reports`              : 'IEM: unavailable');
+  parts.push(okOk ? `OUN: ${okData.total} Oklahoma tornadoes`         : 'OUN: unavailable');
   setStatus(dOk&&iOk?'ok':'warn', parts.join('  ·  '));
+}
+
+/* ── FETCH OUN (via Cloudflare Worker proxy) ──────────
+   Fetches NWS Norman's manually-curated statewide OK list.
+   If WORKER URL isn't configured, skips gracefully.       */
+async function fetchOUN(startYear, endYear) {
+  if (!WORKER || WORKER.includes('YOUR-WORKER')) {
+    throw new Error('Worker URL not configured');
+  }
+  // If range spans multiple years, fetch each and merge
+  const years = [];
+  for (let y = startYear; y <= endYear; y++) years.push(y);
+
+  const results = await Promise.all(
+    years.map(y => fetch(`${WORKER}?year=${y}`).then(r => r.ok ? r.json() : null))
+  );
+
+  // Merge multi-year results
+  const merged = { total: 0, by_ef: {EFU:0,EF0:0,EF1:0,EF2:0,EF3:0,EF4:0,EF5:0}, by_month: {}, tornadoes: [] };
+  results.forEach(r => {
+    if (!r) return;
+    merged.total += r.total || 0;
+    Object.entries(r.by_ef || {}).forEach(([k,v]) => { merged.by_ef[k] = (merged.by_ef[k]||0)+v; });
+    Object.entries(r.by_month || {}).forEach(([k,v]) => { merged.by_month[k] = (merged.by_month[k]||0)+v; });
+    if (r.tornadoes) merged.tornadoes.push(...r.tornadoes);
+  });
+  return merged;
 }
 
 /* ── STATE RESOLUTION — 3-tier logic ──────────────────
@@ -563,6 +610,23 @@ function renderAll(s,e) {
   else iemEl.textContent='N/A';
 
   animNum(document.getElementById('h-states'), Object.keys(stMap).length);
+
+  // Oklahoma OUN count
+  const okEl  = document.getElementById('h-ok');
+  const okSub = document.getElementById('h-ok-sub');
+  if (okData) {
+    animNum(okEl, okData.total);
+    okEl.style.color = 'var(--amb)';
+    // Show EF breakdown from OUN as subtitle
+    const efParts = ['EF0','EF1','EF2','EF3','EF4','EF5']
+      .filter(k => okData.by_ef[k] > 0)
+      .map(k => `${k}:${okData.by_ef[k]}`);
+    okSub.textContent = efParts.join('  ') || 'NWS Norman confirmed';
+  } else {
+    okEl.textContent = '—';
+    okSub.textContent = 'Worker not configured — see readme';
+    okEl.style.color = 'var(--t3)';
+  }
   const casEl=document.getElementById('h-cas');
   casEl.textContent=`${inj.toLocaleString()} / ${fat.toLocaleString()}`;
   casEl.style.color=fat>0?'var(--red)':'var(--t1)';
@@ -577,6 +641,11 @@ function renderAll(s,e) {
   document.getElementById('d2-dat').textContent=total.toLocaleString();
   document.getElementById('d2-iem').textContent=iemCnt!==null?iemCnt.toLocaleString():'N/A';
   document.getElementById('dual').style.display='grid';
+
+  // Override Oklahoma's DAT count with the more accurate OUN count when available
+  if (okData && okData.total > 0) {
+    stMap['OK'] = okData.total;
+  }
 
   renderStateTable(); curPg=1; renderEventsTable();
 }
@@ -594,12 +663,13 @@ function renderStateTable() {
   if (!ents.length){el.innerHTML='<div class="te">No state data available for this period.</div>';return;}
   const sorted=[...ents].sort((a,b)=>sortMode==='count'?b[1]-a[1]:a[0].localeCompare(b[0]));
   const mx=Math.max(...ents.map(e=>e[1]));
+  const ounTotal = okData?.total || 0;
   el.innerHTML=`<table>
     <thead><tr><th>State</th><th>Tornadoes</th><th>Relative</th><th>% of Total</th></tr></thead>
     <tbody>${sorted.map(([st,n])=>`<tr>
       <td class="tds">${ST_N[st]||st}</td>
-      <td class="tdc">${n}</td>
-      <td><div class="bw"><div class="bf" style="width:${Math.round(n/mx*100)}%"></div></div></td>
+      <td class="tdc">${n}${st==='OK'&&ounTotal?' <span style="font-size:9px;color:var(--amb);font-family:var(--mono);font-weight:500;letter-spacing:.05em;vertical-align:middle">OUN</span>':''}</td>
+      <td><div class="bw"><div class="bf" style="width:${Math.round(n/mx*100)}%;${st==='OK'&&ounTotal?'background:var(--amb)':''}"></div></div></td>
       <td style="color:var(--t3);font-size:11px">${(n/datEvs.length*100).toFixed(1)}%</td>
     </tr>`).join('')}</tbody>
   </table>`;
