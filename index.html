@@ -429,15 +429,19 @@ async function fetchOUN(startYear, endYear) {
   if (!WORKER || WORKER.includes('YOUR-WORKER')) {
     throw new Error('Worker URL not configured');
   }
-  // If range spans multiple years, fetch each and merge
   const years = [];
   for (let y = startYear; y <= endYear; y++) years.push(y);
 
-  const results = await Promise.all(
-    years.map(y => fetch(`${WORKER}?year=${y}`).then(r => r.ok ? r.json() : null))
-  );
+  const results = await Promise.all(years.map(async y => {
+    const url = `${WORKER}?year=${y}`;
+    console.log('[OUN] Fetching:', url);
+    const res = await fetch(url);
+    const json = await res.json();
+    console.log('[OUN] Response:', JSON.stringify(json).slice(0, 300));
+    if (json.error) throw new Error(`Worker error: ${json.error}`);
+    return json;
+  }));
 
-  // Merge multi-year results
   const merged = { total: 0, by_ef: {EFU:0,EF0:0,EF1:0,EF2:0,EF3:0,EF4:0,EF5:0}, by_month: {}, tornadoes: [] };
   results.forEach(r => {
     if (!r) return;
@@ -446,6 +450,7 @@ async function fetchOUN(startYear, endYear) {
     Object.entries(r.by_month || {}).forEach(([k,v]) => { merged.by_month[k] = (merged.by_month[k]||0)+v; });
     if (r.tornadoes) merged.tornadoes.push(...r.tornadoes);
   });
+  console.log('[OUN] Merged total:', merged.total);
   return merged;
 }
 
