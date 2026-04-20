@@ -310,19 +310,23 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
       <div class="ws-bar" style="background:var(--amb)"></div>
       <div class="ws-lbl">Tornado Warnings</div>
       <div class="ws-val" id="ws-tw" style="color:var(--amb)">—</div>
-      <div class="ws-src">IEM VTEC · State-resolved</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <div class="ws-src">IEM VTEC</div>
+        <div class="ws-src" style="color:#ff6b6b;border-color:rgba(255,107,107,.3)">PDS: <span id="ws-pds" style="font-weight:600">—</span></div>
+        <div class="ws-src" style="color:var(--red);border-color:rgba(232,59,59,.3)">Emergencies: <span id="ws-emg" style="font-weight:600">—</span></div>
+      </div>
     </div>
     <div class="ws-card" style="border-color:rgba(232,59,59,.25)">
       <div class="ws-bar" style="background:#ff6b6b"></div>
       <div class="ws-lbl">Tornado Watches</div>
       <div class="ws-val" id="ws-ta" style="color:#ff6b6b">—</div>
-      <div class="ws-src">SPC issued · IEM VTEC</div>
+      <div class="ws-src" style="margin-top:8px">SPC issued · IEM VTEC</div>
     </div>
     <div class="ws-card" style="border-color:rgba(59,143,232,.25)">
       <div class="ws-bar" style="background:var(--blu)"></div>
       <div class="ws-lbl">Severe Thunderstorm Watches</div>
       <div class="ws-val" id="ws-sv" style="color:var(--blu)">—</div>
-      <div class="ws-src">SPC issued · IEM VTEC</div>
+      <div class="ws-src" style="margin-top:8px">SPC issued · IEM VTEC</div>
     </div>
   </div>
 
@@ -666,12 +670,22 @@ function renderAll(s,e) {
   let inj=0, fat=0;
   stMap={};
 
+  const EF_ORDER = {'EF0':0,'EF1':1,'EF2':2,'EF3':3,'EF3+':3,'EF4':4,'EF5':5};
+  const efMaxByState = {};
+
   datEvs.forEach(ev=>{
-    const scale=(ev.efscale||'').toUpperCase().replace('EF3+','EF3').replace('EF UNKNOWN','UNK');
-    const key = ['EF0','EF1','EF2','EF3','EF4','EF5'].includes(scale)?scale:'UNK';
+    const scale=(ev.efscale||'').toUpperCase().replace('EF UNKNOWN','UNK');
+    const normScale = scale === 'EF3+' ? 'EF3' : scale;
+    const key = ['EF0','EF1','EF2','EF3','EF4','EF5'].includes(normScale)?normScale:'UNK';
     ef[key]=(ef[key]||0)+1;
     const st = ev._state || WFO_ST[ev.wfo?.toUpperCase()?.trim()] || null;
-    if (st) stMap[st]=(stMap[st]||0)+1;
+    if (st) {
+      stMap[st]=(stMap[st]||0)+1;
+      const rank = EF_ORDER[scale] ?? EF_ORDER[normScale] ?? -1;
+      if (rank > (EF_ORDER[efMaxByState[st]] ?? -1)) {
+        efMaxByState[st] = normScale !== 'UNK' ? normScale : (efMaxByState[st]||null);
+      }
+    }
     if (ev.injuries>0)   inj+=ev.injuries;
     if (ev.fatalities>0) fat+=ev.fatalities;
   });
@@ -719,10 +733,14 @@ function renderAll(s,e) {
   // Warning summary strip
   const strip = document.getElementById('warn-strip');
   if (vtecData.warn || vtecData.twatch || vtecData.swatch) {
-    strip.style.display='flex';
-    if (vtecData.warn)   { const el=document.getElementById('ws-tw');  animNum(el, vtecData.warn.total);   }
-    if (vtecData.twatch) { const el=document.getElementById('ws-ta');  animNum(el, vtecData.twatch.total); }
-    if (vtecData.swatch) { const el=document.getElementById('ws-sv');  animNum(el, vtecData.swatch.total); }
+    strip.style.display='grid';
+    if (vtecData.warn) {
+      animNum(document.getElementById('ws-tw'), vtecData.warn.total);
+      document.getElementById('ws-pds').textContent = (vtecData.warn.totalPDS || 0).toLocaleString();
+      document.getElementById('ws-emg').textContent = (vtecData.warn.totalEmergency || 0).toLocaleString();
+    }
+    if (vtecData.twatch) animNum(document.getElementById('ws-ta'), vtecData.twatch.total);
+    if (vtecData.swatch) animNum(document.getElementById('ws-sv'), vtecData.swatch.total);
   }
 
   // Override Oklahoma's DAT count with the more accurate OUN count when available
@@ -740,6 +758,7 @@ function renderAll(s,e) {
   animNum(document.getElementById('h-dat'), adjustedTotal);
   document.getElementById('h-dat').style.color = adjustedTotal > 0 ? 'var(--red)' : 'var(--t1)';
 
+  window._efMaxByState = efMaxByState;
   renderStateTable(); curPg=1; renderEventsTable();
 }
 
@@ -757,11 +776,11 @@ function renderStateTable() {
 
   // Pick data source and config based on active tab
   const cfg = {
-    dat:    { map: stMap,              label: 'Tornado Surveys',             col: 'Tornadoes',  color: 'var(--red)',  pct: true  },
-    warn:   { map: vtecData?.warn?.byState   || {}, label: 'Tornado Warnings',   col: 'Warnings',   color: 'var(--amb)',  pct: false },
-    twatch: { map: vtecData?.twatch?.byState || {}, label: 'Tornado Watches',    col: 'Watches',    color: '#ff9f9f',     pct: false },
-    swatch: { map: vtecData?.swatch?.byState || {}, label: 'Svr. Tstm. Watches', col: 'Watches',    color: 'var(--blu)',  pct: false },
-  }[activeTab] || { map: stMap, label: 'By State', col: 'Count', color: 'var(--red)', pct: true };
+    dat:    { map: stMap,                            label: 'Tornado Surveys',             col: 'Tornadoes', color: 'var(--red)', pct: true,  extra: true  },
+    warn:   { map: vtecData?.warn?.byState   || {}, label: 'Tornado Warnings',            col: 'Warnings',  color: 'var(--amb)', pct: false, extra: true  },
+    twatch: { map: vtecData?.twatch?.byState || {}, label: 'Tornado Watches',             col: 'Watches',   color: '#ff6b6b',    pct: false, extra: false },
+    swatch: { map: vtecData?.swatch?.byState || {}, label: 'Severe Thunderstorm Watches', col: 'Watches',   color: 'var(--blu)', pct: false, extra: false },
+  }[activeTab] || { map: stMap, label: 'By State', col: 'Count', color: 'var(--red)', pct: true, extra: false };
 
   titleEl.textContent = cfg.label;
 
@@ -776,23 +795,49 @@ function renderStateTable() {
   const grandTotal = ents.reduce((s,[,v])=>s+v, 0);
   const ounTotal   = okData?.total || 0;
 
+  // EF color map for max EF badges
+  const EF_COL = {EF0:'#00c5b5',EF1:'#55ff00',EF2:'#ffff00',EF3:'#e88000',EF4:'#e60000',EF5:'#a80084'};
+
+  // Extra column headers
+  let extraTh = '';
+  if (activeTab === 'dat')  extraTh = '<th>Max EF</th>';
+  if (activeTab === 'warn') extraTh = '<th style="color:#ff6b6b">PDS</th><th style="color:var(--red)">Emergencies</th>';
+
   el.innerHTML = `<table>
     <thead><tr>
       <th>State</th>
       <th>${cfg.col}</th>
       <th>Relative</th>
       <th>% of Total</th>
+      ${extraTh}
     </tr></thead>
     <tbody>${sorted.map(([st,n]) => {
       const isOkOun = activeTab==='dat' && st==='OK' && ounTotal;
       const barColor = isOkOun ? 'var(--amb)' : cfg.color;
       const badge = isOkOun ? ' <span style="font-size:9px;color:var(--amb);font-family:var(--mono);font-weight:500;letter-spacing:.05em;vertical-align:middle">OUN</span>' : '';
       const pctDenom = cfg.pct ? datEvs.length : grandTotal;
+
+      let extraTd = '';
+      if (activeTab === 'dat') {
+        const maxEF = (window._efMaxByState||{})[st];
+        const efColor = EF_COL[maxEF] || 'var(--t3)';
+        extraTd = maxEF
+          ? `<td><span style="font-family:var(--mono);font-size:11px;font-weight:600;color:${efColor};background:${efColor}18;padding:2px 8px;border-radius:4px;border:1px solid ${efColor}44">${maxEF}</span></td>`
+          : `<td style="color:var(--t3);font-size:11px">—</td>`;
+      }
+      if (activeTab === 'warn') {
+        const pds  = (vtecData?.warn?.pdsByState       ||{})[st] || 0;
+        const emrg = (vtecData?.warn?.emergencyByState ||{})[st] || 0;
+        extraTd = `<td style="font-family:var(--mono);font-size:12px;color:${pds>0?'#ff6b6b':'var(--t3)'}">${pds||'—'}</td>`
+                + `<td style="font-family:var(--mono);font-size:12px;color:${emrg>0?'var(--red)':'var(--t3)'}">${emrg||'—'}</td>`;
+      }
+
       return `<tr>
         <td class="tds">${ST_N[st]||st}</td>
         <td class="tdc" style="color:${cfg.color}">${n}${badge}</td>
         <td><div class="bw"><div class="bf" style="width:${Math.round(n/mx*100)}%;background:${barColor}"></div></div></td>
         <td style="color:var(--t3);font-size:11px">${pctDenom>0?(n/pctDenom*100).toFixed(1):'—'}%</td>
+        ${extraTd}
       </tr>`;
     }).join('')}</tbody>
   </table>`;
@@ -860,20 +905,43 @@ const CONUS_STATES = [
 
 function parseVTECcsv(txt) {
   const lines = txt.trim().split('\n');
-  if (lines.length < 2) return 0;
-  const h   = lines[0].split(',');
-  const wi  = h.indexOf('wfo');
-  const ei  = h.indexOf('eventid');
-  const si  = h.indexOf('status');
-  const seen = new Set();
+  if (lines.length < 2) return { count: 0, emergency: 0, pds: 0 };
+  const h      = lines[0].split(',');
+  const wi     = h.indexOf('wfo');
+  const ei     = h.indexOf('eventid');
+  const si     = h.indexOf('status');
+  const issuei = h.indexOf('utc_issue');   // ← year extraction for cross-year dedup
+  const emgi   = h.indexOf('is_emergency');
+  const pdsi   = h.indexOf('is_pds');
+
+  const seen      = new Set();
+  const emergSeen = new Set();
+  const pdsSeen   = new Set();
+
   lines.slice(1).forEach(l => {
-    const c = l.split(',');
-    const status = c[si] || '';
+    const c      = l.split(',');
+    const status = (c[si] || '').trim();
+
+    // Skip cancelled, expired — these are not active warnings
     if (status === 'CAN' || status === 'EXP') return;
-    const wfo = c[wi] || '', evtId = c[ei] || '';
-    if (wfo && evtId) seen.add(`${wfo}:${evtId}`);
+
+    const wfo   = (c[wi]  || '').trim();
+    const evtId = (c[ei]  || '').trim();
+    if (!wfo || !evtId) return;
+
+    // ── Year-aware dedup ──────────────────────────────────────────
+    // VTEC ETNs reset to 1 each Jan 1, so WFO+ETN alone is ambiguous
+    // across years. Include the issue year so OUN:5:2025 ≠ OUN:5:2026.
+    const issueStr = (c[issuei] || '').trim(); // e.g. "2026-01-08 12:00"
+    const year     = issueStr.length >= 4 ? issueStr.substring(0, 4) : 'XXXX';
+    const key      = `${wfo}:${evtId}:${year}`;
+
+    seen.add(key);
+    if (emgi >= 0 && (c[emgi]||'').trim().toLowerCase() === 'true') emergSeen.add(key);
+    if (pdsi >= 0 && (c[pdsi]||'').trim().toLowerCase() === 'true') pdsSeen.add(key);
   });
-  return seen.size;
+
+  return { count: seen.size, emergency: emergSeen.size, pds: pdsSeen.size };
 }
 
 async function fetchVTEC(s, e, phenomena, significance) {
@@ -886,21 +954,39 @@ async function fetchVTEC(s, e, phenomena, significance) {
   const byState = {};
   let total = 0;
 
+  const emergencyByState = {};
+  const pdsByState = {};
+
   for (let i = 0; i < CONUS_STATES.length; i += BATCH) {
     const batch = CONUS_STATES.slice(i, i + BATCH);
     await Promise.all(batch.map(async st => {
       try {
+        // Standard fetch
         const url = `${base}?${common}&location_group=states&states=${st}`;
         const res = await fetch(url);
         if (!res.ok) return;
         const txt = await res.text();
-        const count = parseVTECcsv(txt);
-        if (count > 0) { byState[st] = count; total += count; }
+        const parsed = parseVTECcsv(txt);
+        if (parsed.count > 0) { byState[st] = parsed.count; total += parsed.count; }
+        if (parsed.emergency > 0) emergencyByState[st] = parsed.emergency;
+
+        // PDS fetch (tornado warnings only — PDS watches/severe don't use this)
+        if (phenomena === 'TO' && significance === 'W') {
+          const pdsUrl = `${base}?${common}&location_group=states&states=${st}&limitpds=yes`;
+          const pdsRes = await fetch(pdsUrl);
+          if (pdsRes.ok) {
+            const pdsTxt = await pdsRes.text();
+            const pdsParsed = parseVTECcsv(pdsTxt);
+            if (pdsParsed.count > 0) pdsByState[st] = pdsParsed.count;
+          }
+        }
       } catch(e) { /* skip failed state */ }
     }));
   }
 
-  return { total, byState };
+  const totalPDS       = Object.values(pdsByState).reduce((a,b)=>a+b,0);
+  const totalEmergency = Object.values(emergencyByState).reduce((a,b)=>a+b,0);
+  return { total, byState, emergencyByState, pdsByState, totalPDS, totalEmergency };
 }
 
 /* ── TAB SWITCHING ─────────────────────────────────────── */
