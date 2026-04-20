@@ -903,7 +903,9 @@ const CONUS_STATES = [
   'TN','TX','UT','VA','VT','WA','WI','WV','WY'
 ];
 
-function parseVTECcsv(txt) {
+function parseVTECcsv(txt, validWfos = null) {
+  // validWfos: optional Set of WFO codes. If provided, events from other WFOs are skipped.
+  // Used for PDS counts to prevent pixel-clipping false positives at state borders.
   const lines = txt.trim().split('\n');
   if (lines.length < 2) return { count: 0, emergency: 0, pds: 0 };
   const h      = lines[0].split(',');
@@ -929,6 +931,9 @@ function parseVTECcsv(txt) {
     const evtId = (c[ei]  || '').trim();
     if (!wfo || !evtId) return;
 
+    // WFO validation — skip events from WFOs that don't serve this state
+    if (validWfos && !validWfos.has(wfo)) return;
+
     // ── Year-aware dedup ──────────────────────────────────────────
     // VTEC ETNs reset to 1 each Jan 1, so WFO+ETN alone is ambiguous
     // across years. Include the issue year so OUN:5:2025 ≠ OUN:5:2026.
@@ -937,8 +942,13 @@ function parseVTECcsv(txt) {
     const key      = `${wfo}:${evtId}:${year}`;
 
     seen.add(key);
-    if (emgi >= 0 && (c[emgi]||'').trim().toLowerCase() === 'true') emergSeen.add(key);
-    if (pdsi >= 0 && (c[pdsi]||'').trim().toLowerCase() === 'true') pdsSeen.add(key);
+    const isEmerg = emgi >= 0 && (c[emgi]||'').trim().toLowerCase() === 'true';
+    if (isEmerg) {
+      emergSeen.add(key);
+      // Emergency takes priority — do NOT also count as PDS (matches StormVault TE > TPDS logic)
+    } else {
+      if (pdsi >= 0 && (c[pdsi]||'').trim().toLowerCase() === 'true') pdsSeen.add(key);
+    }
   });
 
   return { count: seen.size, emergency: emergSeen.size, pds: pdsSeen.size };
@@ -976,7 +986,15 @@ async function fetchVTEC(s, e, phenomena, significance) {
           const pdsRes = await fetch(pdsUrl);
           if (pdsRes.ok) {
             const pdsTxt = await pdsRes.text();
-            const pdsParsed = parseVTECcsv(pdsTxt);
+            // Build WFO whitelist: only count PDS events from WFOs known to serve this state.
+            // IEM's polygon intersection has pixel-level false positives (e.g. ILX appearing
+            // for Indiana because Clark/Crawford IL counties border Indiana). A WFO whitelist
+            // eliminates these — a PDS warning for Illinois counties is an Illinois PDS, not Indiana's.
+            const validWfos = new Set([
+              ...Object.entries(WFO_ST).filter(([,v])=>v===st).map(([k])=>k),
+              ...Object.entries(WFO_MULTI).filter(([,v])=>v.includes(st)).map(([k])=>k),
+            ]);
+            const pdsParsed = parseVTECcsv(pdsTxt, validWfos);
             if (pdsParsed.count > 0) pdsByState[st] = pdsParsed.count;
           }
         }
