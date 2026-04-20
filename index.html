@@ -279,13 +279,41 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
     </div>
   </div>
 
+  <!-- Warning summary strip -->
+  <div class="warn-strip" id="warn-strip" style="display:none">
+    <div class="ws-card">
+      <div class="ws-lbl">Tornado Warnings</div>
+      <div class="ws-val" id="ws-tw" style="color:var(--amb)">—</div>
+      <div class="ws-sub">Unique events · IEM VTEC</div>
+    </div>
+    <div class="ws-card">
+      <div class="ws-lbl">Tornado Watches</div>
+      <div class="ws-val" id="ws-ta" style="color:#ff9f9f">—</div>
+      <div class="ws-sub">SPC issued · IEM VTEC</div>
+    </div>
+    <div class="ws-card">
+      <div class="ws-lbl">Severe Thunderstorm Watches</div>
+      <div class="ws-val" id="ws-sv" style="color:var(--blu)">—</div>
+      <div class="ws-sub">SPC issued · IEM VTEC</div>
+    </div>
+  </div>
+
   <div style="margin-bottom:24px">
     <div class="th2">
-      <div class="tt">Tornadoes by State <span style="font-size:11px;color:var(--t3);font-family:var(--mono);font-weight:400">NWS DAT</span></div>
-      <div class="sg">
-        <button class="sb on" id="ss-c" onclick="sortState('count')">By Count</button>
-        <button class="sb" id="ss-a" onclick="sortState('alpha')">A–Z</button>
+      <div class="tt" id="state-tbl-title">By State</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div class="sg" id="sort-grp">
+          <button class="sb on" id="ss-c" onclick="sortState('count')">By Count</button>
+          <button class="sb" id="ss-a" onclick="sortState('alpha')">A–Z</button>
+        </div>
       </div>
+    </div>
+    <!-- Tab bar -->
+    <div class="vtab-bar">
+      <button class="vtab v-dat"    onclick="switchTab('dat')"   id="tab-dat"   >Tornado Surveys</button>
+      <button class="vtab"          onclick="switchTab('warn')"  id="tab-warn"  >Tornado Warnings</button>
+      <button class="vtab"          onclick="switchTab('twatch')"id="tab-twatch">Tornado Watches</button>
+      <button class="vtab"          onclick="switchTab('swatch')"id="tab-swatch">Severe Thunderstorm Watches</button>
     </div>
     <div class="tw" id="state-tbl"><div class="te">Select a date range and fetch data to see the state breakdown.</div></div>
   </div>
@@ -320,6 +348,7 @@ const PG  = 15;
 
 /* ── STATE ─────────────────────────────────────────── */
 let datEvs = [], iemCnt = null, okData = null, stMap = {}, sortMode = 'count', curPg = 1, preset = 'ytd';
+let vtecData = { warn: {}, twatch: {}, swatch: {} }, activeTab = 'dat';
 
 /* ── DATES ─────────────────────────────────────────── */
 const fmt  = d => d.toISOString().split('T')[0];
@@ -389,10 +418,13 @@ async function fetchAll() {
   const startYear = parseInt(s.split('-')[0]);
   const endYear   = parseInt(e.split('-')[0]);
 
-  const [dr, ir, okr] = await Promise.allSettled([
+  const [dr, ir, okr, vwr, vtar, vsvr] = await Promise.allSettled([
     fetchDAT(s,e),
     fetchIEM(s,e),
     fetchOUN(startYear, endYear),
+    fetchVTEC(s, e, 'TO', 'W'),
+    fetchVTEC(s, e, 'TO', 'A'),
+    fetchVTEC(s, e, 'SV', 'A'),
   ]);
 
   setLoading(false);
@@ -400,6 +432,11 @@ async function fetchAll() {
   datEvs = dOk ? dr.value : [];
   iemCnt = iOk ? ir.value : null;
   okData = okOk ? okr.value : null;
+  vtecData = {
+    warn:   vwr.status==='fulfilled'  ? vwr.value  : null,
+    twatch: vtar.status==='fulfilled' ? vtar.value : null,
+    swatch: vsvr.status==='fulfilled' ? vsvr.value : null,
+  };
 
   if (!dOk&&!iOk) {
     setStatus('err','Both data sources are currently unavailable. See links below.');
@@ -416,9 +453,12 @@ async function fetchAll() {
 
   renderAll(s,e);
   const parts=[];
-  parts.push(dOk  ? `DAT: ${datEvs.length} confirmed tornado surveys` : 'DAT: unavailable');
-  parts.push(iOk  ? `IEM: ${iemCnt} local storm reports`              : 'IEM: unavailable');
-  parts.push(okOk ? `OUN: ${okData.total} Oklahoma tornadoes`         : 'OUN: unavailable');
+  parts.push(dOk  ? `DAT: ${datEvs.length} surveys`              : 'DAT: unavailable');
+  parts.push(iOk  ? `IEM: ${iemCnt} LSR reports`                 : 'IEM: unavailable');
+  parts.push(okOk ? `OUN: ${okData.total} OK tornadoes`          : 'OUN: unavailable');
+  if (vtecData.warn)   parts.push(`Warnings: ${vtecData.warn.total}`);
+  if (vtecData.twatch) parts.push(`TOR Watches: ${vtecData.twatch.total}`);
+  if (vtecData.swatch) parts.push(`SVR Watches: ${vtecData.swatch.total}`);
   setStatus(dOk&&iOk?'ok':'warn', parts.join('  ·  '));
 }
 
@@ -635,7 +675,8 @@ function renderAll(s,e) {
   const casEl=document.getElementById('h-cas');
   casEl.textContent=`${inj.toLocaleString()} / ${fat.toLocaleString()}`;
   casEl.style.color=fat>0?'var(--red)':'var(--t1)';
-  document.getElementById('h-range').textContent=`${fmtD(s)} → ${fmtD(e)}`;
+  const okAdj = (okData && okData.total > 0) ? ` · OK adjusted to OUN (${okData.total})` : '';
+  document.getElementById('h-range').textContent=`${fmtD(s)} → ${fmtD(e)}${okAdj}`;
   document.getElementById('ts-lbl').textContent='Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 
   ['EF0','EF1','EF2','EF3','EF4','EF5'].forEach(k=>
@@ -647,10 +688,29 @@ function renderAll(s,e) {
   document.getElementById('d2-iem').textContent=iemCnt!==null?iemCnt.toLocaleString():'N/A';
   document.getElementById('dual').style.display='grid';
 
-  // Override Oklahoma's DAT count with the more accurate OUN count when available
-  if (okData && okData.total > 0) {
-    stMap['OK'] = okData.total;
+  // Warning summary strip
+  const strip = document.getElementById('warn-strip');
+  if (vtecData.warn || vtecData.twatch || vtecData.swatch) {
+    strip.style.display='flex';
+    if (vtecData.warn)   { const el=document.getElementById('ws-tw');  animNum(el, vtecData.warn.total);   }
+    if (vtecData.twatch) { const el=document.getElementById('ws-ta');  animNum(el, vtecData.twatch.total); }
+    if (vtecData.swatch) { const el=document.getElementById('ws-sv');  animNum(el, vtecData.swatch.total); }
   }
+
+  // Override Oklahoma's DAT count with the more accurate OUN count when available
+  // Also adjust the hero total so it reflects the OUN correction, not just raw DAT
+  let adjustedTotal = total;
+  if (okData && okData.total > 0) {
+    const datOkCount = stMap['OK'] || 0;
+    const ounOkCount = okData.total;
+    stMap['OK'] = ounOkCount;
+    // Adjust the national total by the difference
+    adjustedTotal = total - datOkCount + ounOkCount;
+  }
+
+  // Re-render the hero count with the adjusted total
+  animNum(document.getElementById('h-dat'), adjustedTotal);
+  document.getElementById('h-dat').style.color = adjustedTotal > 0 ? 'var(--red)' : 'var(--t1)';
 
   renderStateTable(); curPg=1; renderEventsTable();
 }
@@ -662,21 +722,51 @@ function sortState(m) {
   document.getElementById('ss-a').classList.toggle('on',m==='alpha');
   renderStateTable();
 }
+
 function renderStateTable() {
-  const el=document.getElementById('state-tbl');
-  const ents=Object.entries(stMap);
-  if (!ents.length){el.innerHTML='<div class="te">No state data available for this period.</div>';return;}
-  const sorted=[...ents].sort((a,b)=>sortMode==='count'?b[1]-a[1]:a[0].localeCompare(b[0]));
-  const mx=Math.max(...ents.map(e=>e[1]));
-  const ounTotal = okData?.total || 0;
-  el.innerHTML=`<table>
-    <thead><tr><th>State</th><th>Tornadoes</th><th>Relative</th><th>% of Total</th></tr></thead>
-    <tbody>${sorted.map(([st,n])=>`<tr>
-      <td class="tds">${ST_N[st]||st}</td>
-      <td class="tdc">${n}${st==='OK'&&ounTotal?' <span style="font-size:9px;color:var(--amb);font-family:var(--mono);font-weight:500;letter-spacing:.05em;vertical-align:middle">OUN</span>':''}</td>
-      <td><div class="bw"><div class="bf" style="width:${Math.round(n/mx*100)}%;${st==='OK'&&ounTotal?'background:var(--amb)':''}"></div></div></td>
-      <td style="color:var(--t3);font-size:11px">${(n/datEvs.length*100).toFixed(1)}%</td>
-    </tr>`).join('')}</tbody>
+  const el = document.getElementById('state-tbl');
+  const titleEl = document.getElementById('state-tbl-title');
+
+  // Pick data source and config based on active tab
+  const cfg = {
+    dat:    { map: stMap,              label: 'Tornado Surveys',             col: 'Tornadoes',  color: 'var(--red)',  pct: true  },
+    warn:   { map: vtecData?.warn?.byState   || {}, label: 'Tornado Warnings',   col: 'Warnings',   color: 'var(--amb)',  pct: false },
+    twatch: { map: vtecData?.twatch?.byState || {}, label: 'Tornado Watches',    col: 'Watches',    color: '#ff9f9f',     pct: false },
+    swatch: { map: vtecData?.swatch?.byState || {}, label: 'Svr. Tstm. Watches', col: 'Watches',    color: 'var(--blu)',  pct: false },
+  }[activeTab] || { map: stMap, label: 'By State', col: 'Count', color: 'var(--red)', pct: true };
+
+  titleEl.textContent = cfg.label;
+
+  const ents = Object.entries(cfg.map);
+  if (!ents.length) {
+    el.innerHTML = '<div class="te">No data available for this period.</div>';
+    return;
+  }
+
+  const sorted = [...ents].sort((a,b) => sortMode==='count' ? b[1]-a[1] : a[0].localeCompare(b[0]));
+  const mx     = Math.max(...ents.map(e=>e[1]));
+  const grandTotal = ents.reduce((s,[,v])=>s+v, 0);
+  const ounTotal   = okData?.total || 0;
+
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>State</th>
+      <th>${cfg.col}</th>
+      <th>Relative</th>
+      <th>% of Total</th>
+    </tr></thead>
+    <tbody>${sorted.map(([st,n]) => {
+      const isOkOun = activeTab==='dat' && st==='OK' && ounTotal;
+      const barColor = isOkOun ? 'var(--amb)' : cfg.color;
+      const badge = isOkOun ? ' <span style="font-size:9px;color:var(--amb);font-family:var(--mono);font-weight:500;letter-spacing:.05em;vertical-align:middle">OUN</span>' : '';
+      const pctDenom = cfg.pct ? datEvs.length : grandTotal;
+      return `<tr>
+        <td class="tds">${ST_N[st]||st}</td>
+        <td class="tdc" style="color:${cfg.color}">${n}${badge}</td>
+        <td><div class="bw"><div class="bf" style="width:${Math.round(n/mx*100)}%;background:${barColor}"></div></div></td>
+        <td style="color:var(--t3);font-size:11px">${pctDenom>0?(n/pctDenom*100).toFixed(1):'—'}%</td>
+      </tr>`;
+    }).join('')}</tbody>
   </table>`;
 }
 
@@ -723,6 +813,85 @@ function fmtD(d) {
   if (!d) return '';
   const [y,m,dy]=d.split('-');
   return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m-1]+' '+parseInt(dy)+', '+y;
+}
+
+/* ── FETCH VTEC (IEM watchwarn) ───────────────────────
+   phenomena: TO=tornado, SV=severe tstm
+   significance: W=warning, A=watch
+   Returns { total, byState: {ST: count} }                */
+async function fetchVTEC(s, e, phenomena, significance) {
+  const base = 'https://mesonet.agron.iastate.edu/cgi-bin/request/gis/watchwarn.py';
+  const url  = `${base}?sts=${s}T00:00Z&ets=${e}T23:59Z&limitps=yes&phenomena=${phenomena}&significance=${significance}&accept=csv`;
+  const res  = await fetch(url);
+  if (!res.ok) throw new Error(`VTEC HTTP ${res.status}`);
+  const txt  = await res.text();
+  const lines = txt.trim().split('
+');
+  if (lines.length < 2) return { total: 0, byState: {} };
+
+  const headers = lines[0].split(',');
+  const wfoIdx  = headers.indexOf('wfo');
+  const ugcIdx  = headers.indexOf('ugc');
+  const evtIdx  = headers.indexOf('eventid');
+  const stsIdx  = headers.indexOf('status');
+
+  // Count unique events per state
+  // For polygon warnings (empty ugc): derive state from WFO
+  // For county/zone events (ugc present): first 2 chars = state
+  const seen   = new Set();   // "STATE:eventid" to deduplicate
+  const byState = {};
+
+  lines.slice(1).forEach(line => {
+    const cols  = line.split(',');
+    const wfo   = cols[wfoIdx] || '';
+    const ugc   = cols[ugcIdx] || '';
+    const evtId = cols[evtIdx] || '';
+    const status = cols[stsIdx] || '';
+    if (status === 'CAN' || status === 'EXP') return; // skip cancelled/expired
+    
+    let state = '';
+    if (ugc && ugc.length >= 2) {
+      state = ugc.substring(0, 2).toUpperCase();
+    } else if (wfo) {
+      state = WFO_ST[wfo.toUpperCase()] || '';
+    }
+    if (!state || !evtId) return;
+
+    const key = `${state}:${wfo}:${evtId}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      byState[state] = (byState[state] || 0) + 1;
+    }
+  });
+
+  // Total unique events nationally (deduplicate by wfo+eventid only)
+  const totalSeen = new Set();
+  lines.slice(1).forEach(line => {
+    const cols  = line.split(',');
+    const wfo   = cols[wfoIdx] || '';
+    const evtId = cols[evtIdx] || '';
+    const status = cols[stsIdx] || '';
+    if (status === 'CAN' || status === 'EXP') return;
+    if (wfo && evtId) totalSeen.add(`${wfo}:${evtId}`);
+  });
+
+  return { total: totalSeen.size, byState };
+}
+
+/* ── TAB SWITCHING ─────────────────────────────────────── */
+function switchTab(tab) {
+  activeTab = tab;
+  // Update tab styles
+  const tabs = { dat:'v-dat', warn:'v-warn', twatch:'v-twatch', swatch:'v-swatch' };
+  Object.entries(tabs).forEach(([t, cls]) => {
+    const el = document.getElementById(`tab-${t}`);
+    if (!el) return;
+    el.className = t === tab ? `vtab ${cls}` : 'vtab';
+  });
+  // Update sort group visibility (only meaningful for DAT)
+  document.getElementById('sort-grp').style.opacity = tab === 'dat' ? '1' : '0.4';
+  // Re-render
+  renderStateTable();
 }
 
 /* ── WFO → STATE ───────────────────────────────────── */
