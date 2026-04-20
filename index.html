@@ -903,9 +903,11 @@ const CONUS_STATES = [
   'TN','TX','UT','VA','VT','WA','WI','WV','WY'
 ];
 
-function parseVTECcsv(txt, validWfos = null) {
-  // validWfos: optional Set of WFO codes. If provided, events from other WFOs are skipped.
-  // Used for PDS counts to prevent pixel-clipping false positives at state borders.
+function parseVTECcsv(txt, validWfos = null, filterPhenSig = null, keepExpired = false) {
+  // validWfos:     optional Set of WFO codes — events from other WFOs are skipped.
+  // filterPhenSig: optional {ph, sig} — client-side phenomena/significance filter.
+  //   Needed because IEM's location_group=states ignores phenomena/significance URL params
+  //   when limitps=yes is absent (e.g. county-based watch products).
   const lines = txt.trim().split('\n');
   if (lines.length < 2) return { count: 0, emergency: 0, pds: 0 };
   const h      = lines[0].split(',');
@@ -915,6 +917,8 @@ function parseVTECcsv(txt, validWfos = null) {
   const issuei = h.indexOf('utc_issue');   // ← year extraction for cross-year dedup
   const emgi   = h.indexOf('is_emergency');
   const pdsi   = h.indexOf('is_pds');
+  const phi    = h.indexOf('phenomena');
+  const sigi   = h.indexOf('significance');
 
   const seen      = new Set();
   const emergSeen = new Set();
@@ -924,12 +928,21 @@ function parseVTECcsv(txt, validWfos = null) {
     const c      = l.split(',');
     const status = (c[si] || '').trim();
 
-    // Skip cancelled, expired — these are not active warnings
-    if (status === 'CAN' || status === 'EXP') return;
+    // For warnings (W): skip CAN/EXP — these were cancelled or didn't run to completion.
+    // For watches (A): keep CAN/EXP — all historical watches will be EXP/CAN once they end.
+    //   A cancelled/expired watch was still a legitimately issued watch.
+    if (!keepExpired && (status === 'CAN' || status === 'EXP')) return;
 
     const wfo   = (c[wi]  || '').trim();
     const evtId = (c[ei]  || '').trim();
     if (!wfo || !evtId) return;
+
+    // Client-side phenomena/significance filter (needed for watches — IEM ignores URL params without limitps)
+    if (filterPhenSig) {
+      const rowPh  = (c[phi]  || '').trim();
+      const rowSig = (c[sigi] || '').trim();
+      if (rowPh !== filterPhenSig.ph || rowSig !== filterPhenSig.sig) return;
+    }
 
     // WFO validation — skip events from WFOs that don't serve this state
     if (validWfos && !validWfos.has(wfo)) return;
@@ -956,7 +969,11 @@ function parseVTECcsv(txt, validWfos = null) {
 
 async function fetchVTEC(s, e, phenomena, significance) {
   const base   = 'https://mesonet.agron.iastate.edu/cgi-bin/request/gis/watchwarn.py';
-  const common = `sts=${s}T00:00Z&ets=${e}T23:59Z&limitps=yes&phenomena=${phenomena}&significance=${significance}&accept=csv`;
+  // limitps=yes restricts to polygon-based products only.
+  // Tornado/Severe WARNINGS are polygon-based (storm-based) since 2007 → use limitps=yes.
+  // Tornado/Severe WATCHES are county-based UGC products → limitps=yes zeros them out, so omit it.
+  const isWarning = significance === 'W';
+  const common = `sts=${s}T00:00Z&ets=${e}T23:59Z${isWarning ? '&limitps=yes' : ''}&phenomena=${phenomena}&significance=${significance}&accept=csv`;
 
   // Fetch all CONUS states in parallel with state-level filtering
   // This correctly handles polygon warnings that span WFO territories
@@ -976,7 +993,10 @@ async function fetchVTEC(s, e, phenomena, significance) {
         const res = await fetch(url);
         if (!res.ok) return;
         const txt = await res.text();
-        const parsed = parseVTECcsv(txt);
+        // For watches (no limitps), IEM returns all product types — filter client-side.
+        // Also keep EXP/CAN for watches since all historical watches end with that status.
+        const phenSigFilter = isWarning ? null : { ph: phenomena, sig: significance };
+        const parsed = parseVTECcsv(txt, null, phenSigFilter, !isWarning);
         if (parsed.count > 0) { byState[st] = parsed.count; total += parsed.count; }
         if (parsed.emergency > 0) emergencyByState[st] = parsed.emergency;
 
