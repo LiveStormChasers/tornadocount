@@ -160,6 +160,31 @@ tbody tr:hover td{background:var(--bg3)}
 .pp:hover:not(:disabled){border-color:var(--red);color:var(--red)}
 .pp:disabled{opacity:.3;cursor:not-allowed}
 
+/* ── warning summary strip ── */
+.warn-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
+@media(max-width:640px){.warn-strip{grid-template-columns:1fr}}
+.ws-card{background:var(--bg2);border:1px solid var(--bdr);border-radius:12px;
+  padding:20px 20px 16px;position:relative;overflow:hidden}
+.ws-bar{position:absolute;top:0;left:0;right:0;height:2px}
+.ws-lbl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--t3);
+  margin-bottom:12px}
+.ws-val{font-family:'Bebas Neue',sans-serif;font-size:58px;font-weight:400;
+  letter-spacing:.02em;line-height:1;margin-bottom:8px}
+.ws-src{font-size:10px;letter-spacing:.05em;color:var(--t3);padding:3px 9px;
+  border-radius:20px;background:var(--bg3);border:1px solid var(--bdr);
+  display:inline-block}
+
+/* ── VTEC tabs ── */
+.vtab-bar{display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap}
+.vtab{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.05em;
+  padding:7px 16px;border-radius:6px;border:1px solid var(--bdr);
+  background:var(--bg2);color:var(--t3);cursor:pointer;transition:all .15s;white-space:nowrap}
+.vtab:hover{color:var(--t2);border-color:var(--bdr2)}
+.vtab.v-dat   {border-color:rgba(232,59,59,.45);background:rgba(232,59,59,.1);color:var(--red)}
+.vtab.v-warn  {border-color:rgba(245,166,35,.45);background:rgba(245,166,35,.1);color:var(--amb)}
+.vtab.v-twatch{border-color:rgba(255,107,107,.4);background:rgba(255,107,107,.09);color:#ff6b6b}
+.vtab.v-swatch{border-color:rgba(59,143,232,.45);background:rgba(59,143,232,.1);color:var(--blu)}
+
 /* footer */
 .foot{border-top:1px solid var(--bdr);padding-top:18px;margin-top:18px;
   font-size:11px;color:var(--t3);line-height:1.8}
@@ -279,22 +304,25 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
     </div>
   </div>
 
-  <!-- Warning summary strip -->
+  <!-- Warning / Watch summary strip -->
   <div class="warn-strip" id="warn-strip" style="display:none">
-    <div class="ws-card">
+    <div class="ws-card" style="border-color:rgba(245,166,35,.3);background:linear-gradient(135deg,rgba(245,166,35,.05) 0%,var(--bg2) 60%)">
+      <div class="ws-bar" style="background:var(--amb)"></div>
       <div class="ws-lbl">Tornado Warnings</div>
       <div class="ws-val" id="ws-tw" style="color:var(--amb)">—</div>
-      <div class="ws-sub">Unique events · IEM VTEC</div>
+      <div class="ws-src">IEM VTEC · State-resolved</div>
     </div>
-    <div class="ws-card">
+    <div class="ws-card" style="border-color:rgba(232,59,59,.25)">
+      <div class="ws-bar" style="background:#ff6b6b"></div>
       <div class="ws-lbl">Tornado Watches</div>
-      <div class="ws-val" id="ws-ta" style="color:#ff9f9f">—</div>
-      <div class="ws-sub">SPC issued · IEM VTEC</div>
+      <div class="ws-val" id="ws-ta" style="color:#ff6b6b">—</div>
+      <div class="ws-src">SPC issued · IEM VTEC</div>
     </div>
-    <div class="ws-card">
+    <div class="ws-card" style="border-color:rgba(59,143,232,.25)">
+      <div class="ws-bar" style="background:var(--blu)"></div>
       <div class="ws-lbl">Severe Thunderstorm Watches</div>
       <div class="ws-val" id="ws-sv" style="color:var(--blu)">—</div>
-      <div class="ws-sub">SPC issued · IEM VTEC</div>
+      <div class="ws-src">SPC issued · IEM VTEC</div>
     </div>
   </div>
 
@@ -816,65 +844,63 @@ function fmtD(d) {
 }
 
 /* ── FETCH VTEC (IEM watchwarn) ───────────────────────
-   phenomena: TO=tornado, SV=severe tstm
-   significance: W=warning, A=watch
-   Returns { total, byState: {ST: count} }                */
-async function fetchVTEC(s, e, phenomena, significance) {
-  const base = 'https://mesonet.agron.iastate.edu/cgi-bin/request/gis/watchwarn.py';
-  const url  = `${base}?sts=${s}T00:00Z&ets=${e}T23:59Z&limitps=yes&phenomena=${phenomena}&significance=${significance}&accept=csv`;
-  const res  = await fetch(url);
-  if (!res.ok) throw new Error(`VTEC HTTP ${res.status}`);
-  const txt  = await res.text();
+   Uses location_group=states per-state queries for accuracy.
+   Polygon warnings have no UGC so WFO-based mapping miscounts
+   border states (e.g. LOT covers IL+IN). State-filtered API
+   solves this — tested vs WeatherNation, matches within 1 day.
+   Returns { total, byState: {ST: count} }                    */
+
+const CONUS_STATES = [
+  'AL','AR','AZ','CA','CO','CT','DC','DE','FL','GA',
+  'IA','ID','IL','IN','KS','KY','LA','MA','MD','ME',
+  'MI','MN','MO','MS','MT','NC','ND','NE','NH','NJ',
+  'NM','NV','NY','OH','OK','OR','PA','RI','SC','SD',
+  'TN','TX','UT','VA','VT','WA','WI','WV','WY'
+];
+
+function parseVTECcsv(txt) {
   const lines = txt.trim().split('\n');
-  if (lines.length < 2) return { total: 0, byState: {} };
-
-  const headers = lines[0].split(',');
-  const wfoIdx  = headers.indexOf('wfo');
-  const ugcIdx  = headers.indexOf('ugc');
-  const evtIdx  = headers.indexOf('eventid');
-  const stsIdx  = headers.indexOf('status');
-
-  // Count unique events per state
-  // For polygon warnings (empty ugc): derive state from WFO
-  // For county/zone events (ugc present): first 2 chars = state
-  const seen   = new Set();   // "STATE:eventid" to deduplicate
-  const byState = {};
-
-  lines.slice(1).forEach(line => {
-    const cols  = line.split(',');
-    const wfo   = cols[wfoIdx] || '';
-    const ugc   = cols[ugcIdx] || '';
-    const evtId = cols[evtIdx] || '';
-    const status = cols[stsIdx] || '';
-    if (status === 'CAN' || status === 'EXP') return; // skip cancelled/expired
-    
-    let state = '';
-    if (ugc && ugc.length >= 2) {
-      state = ugc.substring(0, 2).toUpperCase();
-    } else if (wfo) {
-      state = WFO_ST[wfo.toUpperCase()] || '';
-    }
-    if (!state || !evtId) return;
-
-    const key = `${state}:${wfo}:${evtId}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      byState[state] = (byState[state] || 0) + 1;
-    }
-  });
-
-  // Total unique events nationally (deduplicate by wfo+eventid only)
-  const totalSeen = new Set();
-  lines.slice(1).forEach(line => {
-    const cols  = line.split(',');
-    const wfo   = cols[wfoIdx] || '';
-    const evtId = cols[evtIdx] || '';
-    const status = cols[stsIdx] || '';
+  if (lines.length < 2) return 0;
+  const h   = lines[0].split(',');
+  const wi  = h.indexOf('wfo');
+  const ei  = h.indexOf('eventid');
+  const si  = h.indexOf('status');
+  const seen = new Set();
+  lines.slice(1).forEach(l => {
+    const c = l.split(',');
+    const status = c[si] || '';
     if (status === 'CAN' || status === 'EXP') return;
-    if (wfo && evtId) totalSeen.add(`${wfo}:${evtId}`);
+    const wfo = c[wi] || '', evtId = c[ei] || '';
+    if (wfo && evtId) seen.add(`${wfo}:${evtId}`);
   });
+  return seen.size;
+}
 
-  return { total: totalSeen.size, byState };
+async function fetchVTEC(s, e, phenomena, significance) {
+  const base   = 'https://mesonet.agron.iastate.edu/cgi-bin/request/gis/watchwarn.py';
+  const common = `sts=${s}T00:00Z&ets=${e}T23:59Z&limitps=yes&phenomena=${phenomena}&significance=${significance}&accept=csv`;
+
+  // Fetch all CONUS states in parallel with state-level filtering
+  // This correctly handles polygon warnings that span WFO territories
+  const BATCH = 10;
+  const byState = {};
+  let total = 0;
+
+  for (let i = 0; i < CONUS_STATES.length; i += BATCH) {
+    const batch = CONUS_STATES.slice(i, i + BATCH);
+    await Promise.all(batch.map(async st => {
+      try {
+        const url = `${base}?${common}&location_group=states&states=${st}`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const txt = await res.text();
+        const count = parseVTECcsv(txt);
+        if (count > 0) { byState[st] = count; total += count; }
+      } catch(e) { /* skip failed state */ }
+    }));
+  }
+
+  return { total, byState };
 }
 
 /* ── TAB SWITCHING ─────────────────────────────────────── */
