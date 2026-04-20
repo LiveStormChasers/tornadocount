@@ -825,8 +825,7 @@ async function fetchVTEC(s, e, phenomena, significance) {
   const res  = await fetch(url);
   if (!res.ok) throw new Error(`VTEC HTTP ${res.status}`);
   const txt  = await res.text();
-  const lines = txt.trim().split('
-');
+  const lines = txt.trim().split('\n');
   if (lines.length < 2) return { total: 0, byState: {} };
 
   const headers = lines[0].split(',');
