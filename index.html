@@ -447,13 +447,16 @@ async function fetchAll() {
   setStatus('loading',`Retrieving data for ${s} through ${e}…`);
 
   // Derive year(s) covered by range for OUN fetch
+  // Only use OUN worker for full-year or YTD ranges — not custom sub-year windows
   const startYear = parseInt(s.split('-')[0]);
   const endYear   = parseInt(e.split('-')[0]);
+  const isFullYearRange = s.endsWith('-01-01') && (e >= `${endYear}-12-31` || e >= new Date().toISOString().substring(0,10));
+  const isYTD = s.endsWith('-01-01');
 
   const [dr, ir, okr, vwr, vtar, vsvr] = await Promise.allSettled([
     fetchDAT(s,e),
     fetchIEM(s,e),
-    fetchOUN(startYear, endYear),
+    isYTD ? fetchOUN(startYear, endYear, s, e) : Promise.resolve(null),
     fetchVTEC(s, e, 'TO', 'W'),
     fetchVTEC(s, e, 'TO', 'A'),
     fetchVTEC(s, e, 'SV', 'A'),
@@ -497,7 +500,7 @@ async function fetchAll() {
 /* ── FETCH OUN (via Cloudflare Worker proxy) ──────────
    Fetches NWS Norman's manually-curated statewide OK list.
    If WORKER URL isn't configured, skips gracefully.       */
-async function fetchOUN(startYear, endYear) {
+async function fetchOUN(startYear, endYear, startDate = null, endDate = null) {
   if (!WORKER || WORKER.includes('YOUR-WORKER')) {
     throw new Error('Worker URL not configured');
   }
@@ -522,6 +525,29 @@ async function fetchOUN(startYear, endYear) {
     Object.entries(r.by_month || {}).forEach(([k,v]) => { merged.by_month[k] = (merged.by_month[k]||0)+v; });
     if (r.tornadoes) merged.tornadoes.push(...r.tornadoes);
   });
+  // If a sub-year date range was given, filter OUN monthly totals to only months
+  // that fall within the requested window.
+  // by_month is e.g. { January: 3, February: 0, March: 12, ... }
+  if (startDate && endDate && merged.by_month && Object.keys(merged.by_month).length > 0) {
+    const MONTHS = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    const sDate = new Date(startDate + 'T00:00:00Z');
+    const eDate = new Date(endDate   + 'T23:59:59Z');
+    const year  = startYear; // single-year ranges only
+
+    let filteredTotal = 0;
+    MONTHS.forEach((name, idx) => {
+      const mStart = new Date(Date.UTC(year, idx, 1));
+      const mEnd   = new Date(Date.UTC(year, idx+1, 0, 23, 59, 59));
+      // Include month if it overlaps the requested range at all
+      if (mStart <= eDate && mEnd >= sDate) {
+        filteredTotal += merged.by_month[name] || 0;
+      }
+    });
+    merged.total = filteredTotal;
+    // Note: we can't break by_ef per month from OUN data alone, so leave by_ef as-is
+    // (it will be slightly off for partial months but total is what matters)
+  }
   console.log('[OUN] Merged total:', merged.total);
   return merged;
 }
@@ -895,136 +921,134 @@ function fmtD(d) {
    solves this — tested vs WeatherNation, matches within 1 day.
    Returns { total, byState: {ST: count} }                    */
 
-const CONUS_STATES = [
-  'AL','AR','AZ','CA','CO','CT','DC','DE','FL','GA',
-  'IA','ID','IL','IN','KS','KY','LA','MA','MD','ME',
-  'MI','MN','MO','MS','MT','NC','ND','NE','NH','NJ',
-  'NM','NV','NY','OH','OK','OR','PA','RI','SC','SD',
-  'TN','TX','UT','VA','VT','WA','WI','WV','WY'
-];
+/* ── VTEC PARSING ─────────────────────────────────────────────────────────
+   National fetch + UGC/WFO-primary state assignment.
+   Matches industry standard (WeatherNation, Adam Lucio/IEM maps):
+   - One national fetch per product type (fast — 1-2 requests vs 49)
+   - Warnings: UGC field first 2 chars = state; falls back to WFO primary
+   - Watches: UGC always populated (county-based), first 2 chars = state
+   - Year-aware dedup: WFO:ETN:year prevents cross-year ETN collisions
+   - Emergency > PDS priority (matches StormVault classification logic) */
 
-function parseVTECcsv(txt, validWfos = null, filterPhenSig = null, keepExpired = false) {
-  // validWfos:     optional Set of WFO codes — events from other WFOs are skipped.
-  // filterPhenSig: optional {ph, sig} — client-side phenomena/significance filter.
-  //   Needed because IEM's location_group=states ignores phenomena/significance URL params
-  //   when limitps=yes is absent (e.g. county-based watch products).
+function parseVTECcsv(txt, ph, sig) {
+  // Parses a national IEM VTEC CSV for a specific phenomena+significance.
+  // Returns { total, byState, emergencyByState, pdsByState, totalPDS, totalEmergency }
   const lines = txt.trim().split('\n');
-  if (lines.length < 2) return { count: 0, emergency: 0, pds: 0 };
-  const h      = lines[0].split(',');
-  const wi     = h.indexOf('wfo');
-  const ei     = h.indexOf('eventid');
-  const si     = h.indexOf('status');
-  const issuei = h.indexOf('utc_issue');   // ← year extraction for cross-year dedup
-  const emgi   = h.indexOf('is_emergency');
-  const pdsi   = h.indexOf('is_pds');
-  const phi    = h.indexOf('phenomena');
-  const sigi   = h.indexOf('significance');
+  if (lines.length < 2) return { total:0, byState:{}, emergencyByState:{}, pdsByState:{}, totalPDS:0, totalEmergency:0 };
+
+  const h = lines[0].split(',');
+  const wi    = h.indexOf('wfo');
+  const ei    = h.indexOf('eventid');
+  const si    = h.indexOf('status');
+  const ii    = h.indexOf('utc_issue');
+  const ugci  = h.indexOf('ugc');
+  const phi   = h.indexOf('phenomena');
+  const sigi  = h.indexOf('significance');
+  const emgi  = h.indexOf('is_emergency');
+  const pdsi  = h.indexOf('is_pds');
+
+  const isWatch = sig === 'A';
 
   const seen      = new Set();
-  const emergSeen = new Set();
-  const pdsSeen   = new Set();
+  const byState   = {};
+  const emergencyByState = {};
+  const pdsByState       = {};
+
+  // Pass 1: collect per-event metadata (best UGC, emergency/pds flags)
+  // Multiple CSV rows share the same WFO+eventid (one row per county update).
+  // We must scan ALL rows before deduping so we capture a non-empty UGC.
+  const eventMeta = {}; // key → {st, isEmerg, isPDS}
 
   lines.slice(1).forEach(l => {
-    const c      = l.split(',');
-    const status = (c[si] || '').trim();
+    const c = l.split(',');
+    const status = (c[si]||'').trim();
 
-    // For warnings (W): skip CAN/EXP — these were cancelled or didn't run to completion.
-    // For watches (A): keep CAN/EXP — all historical watches will be EXP/CAN once they end.
-    //   A cancelled/expired watch was still a legitimately issued watch.
-    if (!keepExpired && (status === 'CAN' || status === 'EXP')) return;
+    // Warnings: skip CAN/EXP. Watches: keep (all historical watches are EXP/CAN).
+    if (!isWatch && (status === 'CAN' || status === 'EXP')) return;
 
-    const wfo   = (c[wi]  || '').trim();
-    const evtId = (c[ei]  || '').trim();
+    // Client-side phenomena+significance filter
+    if ((c[phi]||'').trim() !== ph || (c[sigi]||'').trim() !== sig) return;
+
+    const wfo   = (c[wi]||'').trim();
+    const evtId = (c[ei]||'').trim();
     if (!wfo || !evtId) return;
 
-    // Client-side phenomena/significance filter (needed for watches — IEM ignores URL params without limitps)
-    if (filterPhenSig) {
-      const rowPh  = (c[phi]  || '').trim();
-      const rowSig = (c[sigi] || '').trim();
-      if (rowPh !== filterPhenSig.ph || rowSig !== filterPhenSig.sig) return;
+    const yr  = (c[ii]||'').substring(0, 4) || 'XXXX';
+    const key = `${wfo}:${evtId}:${yr}`;
+
+    // ── State assignment: UGC first 2 chars → WFO primary ──────────
+    // Multiple rows exist per event — scan all to find a non-empty UGC.
+    // Polygon warnings have empty UGC on most rows; we fall back to WFO_ST.
+    const ugc = (c[ugci]||'').trim();
+    const st  = ugc.length >= 2 ? ugc.substring(0, 2).toUpperCase()
+                                : (WFO_ST[wfo] || null);
+
+    if (!eventMeta[key]) {
+      eventMeta[key] = { st: st || null, isEmerg: false, isPDS: false };
+    } else if (!eventMeta[key].st && st) {
+      eventMeta[key].st = st; // upgrade from null to a real state if found later
     }
 
-    // WFO validation — skip events from WFOs that don't serve this state
-    if (validWfos && !validWfos.has(wfo)) return;
-
-    // ── Year-aware dedup ──────────────────────────────────────────
-    // VTEC ETNs reset to 1 each Jan 1, so WFO+ETN alone is ambiguous
-    // across years. Include the issue year so OUN:5:2025 ≠ OUN:5:2026.
-    const issueStr = (c[issuei] || '').trim(); // e.g. "2026-01-08 12:00"
-    const year     = issueStr.length >= 4 ? issueStr.substring(0, 4) : 'XXXX';
-    const key      = `${wfo}:${evtId}:${year}`;
-
-    seen.add(key);
+    // Emergency > PDS — never double-count (StormVault TE > TPDS logic)
     const isEmerg = emgi >= 0 && (c[emgi]||'').trim().toLowerCase() === 'true';
     if (isEmerg) {
-      emergSeen.add(key);
-      // Emergency takes priority — do NOT also count as PDS (matches StormVault TE > TPDS logic)
-    } else {
-      if (pdsi >= 0 && (c[pdsi]||'').trim().toLowerCase() === 'true') pdsSeen.add(key);
+      eventMeta[key].isEmerg = true;
+    } else if (pdsi >= 0 && (c[pdsi]||'').trim().toLowerCase() === 'true') {
+      eventMeta[key].isPDS = true;
     }
   });
 
-  return { count: seen.size, emergency: emergSeen.size, pds: pdsSeen.size };
+  // Pass 2: tally by state
+  Object.entries(eventMeta).forEach(([key, {st, isEmerg, isPDS}]) => {
+    if (!st) return;
+    seen.add(key);
+    byState[st] = (byState[st]||0) + 1;
+    if (isEmerg) {
+      emergencyByState[st] = (emergencyByState[st]||0) + 1;
+    } else if (isPDS) {
+      pdsByState[st] = (pdsByState[st]||0) + 1;
+    }
+  });
+
+  const total        = Object.values(byState).reduce((a,b)=>a+b,0);
+  const totalPDS     = Object.values(pdsByState).reduce((a,b)=>a+b,0);
+  const totalEmergency = Object.values(emergencyByState).reduce((a,b)=>a+b,0);
+  return { total, byState, emergencyByState, pdsByState, totalPDS, totalEmergency };
 }
 
 async function fetchVTEC(s, e, phenomena, significance) {
-  const base   = 'https://mesonet.agron.iastate.edu/cgi-bin/request/gis/watchwarn.py';
-  // limitps=yes restricts to polygon-based products only.
-  // Tornado/Severe WARNINGS are polygon-based (storm-based) since 2007 → use limitps=yes.
-  // Tornado/Severe WATCHES are county-based UGC products → limitps=yes zeros them out, so omit it.
+  /* Single national fetch + client-side state assignment.
+     Matches WeatherNation/Adam Lucio methodology:
+     - Warnings use limitps=yes (polygon products only)
+     - Watches omit limitps (county UGC products)
+     - For PDS sub-count on warnings: second fetch with limitpds=yes           */
+  const base = 'https://mesonet.agron.iastate.edu/cgi-bin/request/gis/watchwarn.py';
   const isWarning = significance === 'W';
-  const common = `sts=${s}T00:00Z&ets=${e}T23:59Z${isWarning ? '&limitps=yes' : ''}&phenomena=${phenomena}&significance=${significance}&accept=csv`;
+  const qs = `sts=${s}T00:00Z&ets=${e}T23:59Z${isWarning ? '&limitps=yes' : ''}&phenomena=${phenomena}&significance=${significance}&accept=csv`;
 
-  // Fetch all CONUS states in parallel with state-level filtering
-  // This correctly handles polygon warnings that span WFO territories
-  const BATCH = 10;
-  const byState = {};
-  let total = 0;
+  const res = await fetch(`${base}?${qs}`);
+  if (!res.ok) throw new Error(`VTEC HTTP ${res.status}`);
+  const txt = await res.text();
+  const result = parseVTECcsv(txt, phenomena, significance);
 
-  const emergencyByState = {};
-  const pdsByState = {};
-
-  for (let i = 0; i < CONUS_STATES.length; i += BATCH) {
-    const batch = CONUS_STATES.slice(i, i + BATCH);
-    await Promise.all(batch.map(async st => {
-      try {
-        // Standard fetch
-        const url = `${base}?${common}&location_group=states&states=${st}`;
-        const res = await fetch(url);
-        if (!res.ok) return;
-        const txt = await res.text();
-        // For watches (no limitps), IEM returns all product types — filter client-side.
-        // Also keep EXP/CAN for watches since all historical watches end with that status.
-        const phenSigFilter = isWarning ? null : { ph: phenomena, sig: significance };
-        const parsed = parseVTECcsv(txt, null, phenSigFilter, !isWarning);
-        if (parsed.count > 0) { byState[st] = parsed.count; total += parsed.count; }
-        if (parsed.emergency > 0) emergencyByState[st] = parsed.emergency;
-
-        // PDS fetch (tornado warnings only — PDS watches/severe don't use this)
-        if (phenomena === 'TO' && significance === 'W') {
-          const pdsUrl = `${base}?${common}&location_group=states&states=${st}&limitpds=yes`;
-          const pdsRes = await fetch(pdsUrl);
-          if (pdsRes.ok) {
-            const pdsTxt = await pdsRes.text();
-            // Build WFO whitelist: only count PDS events from WFOs known to serve this state.
-            // IEM's polygon intersection has pixel-level false positives (e.g. ILX appearing
-            // for Indiana because Clark/Crawford IL counties border Indiana). A WFO whitelist
-            // eliminates these — a PDS warning for Illinois counties is an Illinois PDS, not Indiana's.
-            const validWfos = new Set([
-              ...Object.entries(WFO_ST).filter(([,v])=>v===st).map(([k])=>k),
-              ...Object.entries(WFO_MULTI).filter(([,v])=>v.includes(st)).map(([k])=>k),
-            ]);
-            const pdsParsed = parseVTECcsv(pdsTxt, validWfos);
-            if (pdsParsed.count > 0) pdsByState[st] = pdsParsed.count;
-          }
-        }
-      } catch(e) { /* skip failed state */ }
-    }));
+  // For tornado warnings, fetch PDS subset separately with limitpds=yes
+  // Use ILX false-positive fix: filter out PDS events from WFOs that don't serve
+  // the assigned state (e.g. ILX:9 assigning to IN via UGC — but UGC method
+  // uses WFO_ST so ILX → IL automatically, so no whitelist needed here).
+  if (phenomena === 'TO' && significance === 'W') {
+    try {
+      const pdsRes = await fetch(`${base}?${qs}&limitpds=yes`);
+      if (pdsRes.ok) {
+        const pdsTxt = await pdsRes.text();
+        const pdsParsed = parseVTECcsv(pdsTxt, phenomena, significance);
+        // Override pdsByState with the dedicated limitpds fetch
+        Object.assign(result.pdsByState, pdsParsed.byState);
+        result.totalPDS = Object.values(result.pdsByState).reduce((a,b)=>a+b,0);
+      }
+    } catch(e) { /* PDS fetch failed — use inline is_pds flags */ }
   }
 
-  const totalPDS       = Object.values(pdsByState).reduce((a,b)=>a+b,0);
-  const totalEmergency = Object.values(emergencyByState).reduce((a,b)=>a+b,0);
-  return { total, byState, emergencyByState, pdsByState, totalPDS, totalEmergency };
+  return result;
 }
 
 /* ── TAB SWITCHING ─────────────────────────────────────── */
