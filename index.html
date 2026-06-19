@@ -344,9 +344,10 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
     </div>
     <!-- Tab bar -->
     <div class="vtab-bar">
-      <button class="vtab v-dat"    onclick="switchTab('dat')"   id="tab-dat"   >Tornado Surveys</button>
+      <button class="vtab v-dat"    onclick="switchTab('dat')"   id="tab-dat"   >DAT Surveys</button>
       <button class="vtab"          onclick="switchTab('lsr')"   id="tab-lsr"   >LSR Reports</button>
-      <button class="vtab"          onclick="switchTab('spc')"   id="tab-spc"   >SPC Reports</button>
+      <button class="vtab"          onclick="switchTab('spc')"   id="tab-spc"   >SPC Filtered</button>
+      <button class="vtab"          onclick="switchTab('spcraw')" id="tab-spcraw" >SPC Raw</button>
       <button class="vtab"          onclick="switchTab('warn')"  id="tab-warn"  >Tornado Warnings</button>
       <button class="vtab"          onclick="switchTab('twatch')"id="tab-twatch">Tornado Watches</button>
       <button class="vtab"          onclick="switchTab('swatch')"id="tab-swatch">Severe Thunderstorm Watches</button>
@@ -384,7 +385,7 @@ const WORKER = 'https://oktornadocount.livestormchaser.workers.dev';
 const PG  = 15;
 
 /* ── STATE ─────────────────────────────────────────── */
-let datEvs = [], iemCnt = null, spcData = null, okData = null, stMap = {}, sortMode = 'count', curPg = 1, preset = 'ytd';
+let datEvs = [], iemCnt = null, spcData = null, spcRawData = null, okData = null, stMap = {}, sortMode = 'count', curPg = 1, preset = 'ytd';
 let vtecData = { warn: {}, twatch: {}, swatch: {} }, activeTab = 'dat';
 
 /* ── DATES ─────────────────────────────────────────── */
@@ -458,10 +459,11 @@ async function fetchAll() {
   const isFullYearRange = s.endsWith('-01-01') && (e >= `${endYear}-12-31` || e >= new Date().toISOString().substring(0,10));
   const isYTD = s.endsWith('-01-01');
 
-  const [dr, ir, sr, okr, vwr, vtar, vsvr] = await Promise.allSettled([
+  const [dr, ir, sr, srr, okr, vwr, vtar, vsvr] = await Promise.allSettled([
     fetchDAT(s,e),
     fetchIEM(s,e),
     fetchSPC(s,e),
+    fetchSPCRaw(s,e),
     isYTD ? fetchOUN(startYear, endYear, s, e) : Promise.resolve(null),
     fetchVTEC(s, e, 'TO', 'W'),
     fetchVTEC(s, e, 'TO', 'A'),
@@ -472,7 +474,8 @@ async function fetchAll() {
   const dOk=dr.status==='fulfilled', iOk=ir.status==='fulfilled', okOk=okr.status==='fulfilled';
   datEvs = dOk ? dr.value : [];
   iemCnt  = iOk ? ir.value : null;
-  spcData = sr.status === 'fulfilled' ? sr.value : null;
+  spcData    = sr.status  === 'fulfilled' ? sr.value  : null;
+  spcRawData = srr.status === 'fulfilled' ? srr.value : null;
   okData  = okOk ? okr.value : null;
   vtecData = {
     warn:   vwr.status==='fulfilled'  ? vwr.value  : null,
@@ -497,7 +500,7 @@ async function fetchAll() {
   const parts=[];
   parts.push(dOk  ? `DAT: ${datEvs.length} surveys`              : 'DAT: unavailable');
   parts.push(iOk  ? `IEM: ${iemCnt.total} LSR reports`            : 'IEM: unavailable');
-  parts.push(spcData ? `SPC: ${spcData.total} tornado reports`     : 'SPC: unavailable');
+  parts.push(spcData ? `SPC: ${spcData.total} filtered · ${spcRawData?.total ?? '?'} raw tornado reports` : 'SPC: unavailable');
   parts.push(okOk ? `OUN: ${okData.total} OK tornadoes`          : 'OUN: unavailable');
   if (vtecData.warn)   parts.push(`Warnings: ${vtecData.warn.total}`);
   if (vtecData.twatch) parts.push(`TOR Watches: ${vtecData.twatch.total}`);
@@ -754,7 +757,7 @@ async function fetchSPC(s, e) {
     await Promise.all(dates.slice(i, i + BATCH).map(async ({ ds, baseY, baseM, baseD }) => {
       try {
         // Try filtered file first (removes duplicate sightings of same tornado)
-        // Filtered matches what AccuWeather/news sources report.
+        // Filtered removes duplicate sightings of the same tornado.
         // Falls back to raw if filtered not available.
         let txt = null;
         const filtRes = await fetch(`${SPC_RPTS}/${ds}_rpts_filtered_torn.csv`);
@@ -790,6 +793,57 @@ async function fetchSPC(s, e) {
           // Only count if event falls within the requested range
           if (eventDate < rangeStart || eventDate > rangeEnd) return;
 
+          byState[st] = (byState[st] || 0) + 1;
+          total++;
+        });
+      } catch(e) {}
+    }));
+  }
+  return { total, byState };
+}
+
+// Unfiltered variant — same logic but always uses _rpts_torn.csv (raw/unfiltered)
+// Includes all individual sightings, no duplicate merging
+async function fetchSPCRaw(s, e) {
+  const byState = {};
+  let total = 0;
+
+  const rangeStart = new Date(s + 'T00:00:00Z');
+  const rangeEnd   = new Date(e + 'T23:59:59Z');
+  const fetchStart = new Date(rangeStart); fetchStart.setUTCDate(fetchStart.getUTCDate() - 1);
+  const fetchEnd   = new Date(rangeEnd);   fetchEnd.setUTCDate(fetchEnd.getUTCDate() + 1);
+
+  const dates = [];
+  for (let d = new Date(fetchStart); d <= fetchEnd; d.setUTCDate(d.getUTCDate() + 1)) {
+    dates.push({
+      ds: String(d.getUTCFullYear()).slice(2) + String(d.getUTCMonth()+1).padStart(2,'0') + String(d.getUTCDate()).padStart(2,'0'),
+      baseY: d.getUTCFullYear(), baseM: d.getUTCMonth(), baseD: d.getUTCDate()
+    });
+  }
+
+  const BATCH = 10;
+  for (let i = 0; i < dates.length; i += BATCH) {
+    await Promise.all(dates.slice(i, i + BATCH).map(async ({ ds, baseY, baseM, baseD }) => {
+      try {
+        const res = await fetch(`${SPC_RPTS}/${ds}_rpts_torn.csv`);
+        if (!res.ok) return;
+        const lines = (await res.text()).trim().split('\n');
+        if (lines.length < 2) return;
+        const h  = lines[0].split(',');
+        const ti = h.indexOf('Time');
+        const si = h.indexOf('State');
+        if (si < 0) return;
+        lines.slice(1).forEach(l => {
+          const c  = l.split(',');
+          const st = (c[si] || '').trim();
+          if (!st || st.length !== 2) return;
+          const ts = (c[ti] || '0000').padStart(4, '0');
+          const hh = parseInt(ts.substring(0, 2), 10);
+          const mn = parseInt(ts.substring(2, 4), 10);
+          const ev = hh < 12
+            ? new Date(Date.UTC(baseY, baseM, baseD + 1, hh, mn))
+            : new Date(Date.UTC(baseY, baseM, baseD, hh, mn));
+          if (ev < rangeStart || ev > rangeEnd) return;
           byState[st] = (byState[st] || 0) + 1;
           total++;
         });
@@ -914,7 +968,8 @@ function renderStateTable() {
   const cfg = {
     dat:    { map: stMap,                            label: 'Tornado Surveys',             col: 'Tornadoes', color: 'var(--red)', pct: true,  extra: true  },
     lsr:    { map: iemCnt?.byState          || {}, label: 'Tornado Reports (IEM LSR)',   col: 'Reports',   color: 'var(--blu)', pct: false, extra: false },
-    spc:    { map: spcData?.byState          || {}, label: 'Tornado Reports (SPC Daily)', col: 'Reports',   color: 'var(--grn)', pct: false, extra: false },
+    spc:    { map: spcData?.byState    || {}, label: 'SPC Filtered Tornado Reports',   col: 'Reports', color: 'var(--grn)', pct: false, extra: false },
+    spcraw: { map: spcRawData?.byState || {}, label: 'SPC Raw (Unfiltered) Tornado Reports', col: 'Reports', color: '#aaaaaa',    pct: false, extra: false },
     warn:   { map: vtecData?.warn?.byState   || {}, label: 'Tornado Warnings',            col: 'Warnings',  color: 'var(--amb)', pct: false, extra: true  },
     twatch: { map: vtecData?.twatch?.byState || {}, label: 'Tornado Watches',             col: 'Watches',   color: '#ff6b6b',    pct: false, extra: false },
     swatch: { map: vtecData?.swatch?.byState || {}, label: 'Severe Thunderstorm Watches', col: 'Watches',   color: 'var(--blu)', pct: false, extra: false },
@@ -939,10 +994,12 @@ function renderStateTable() {
   // Extra column headers
   let extraTh = '';
   let tableNote = '';
+  if (activeTab === 'dat') tableNote = '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;padding:6px 10px;background:var(--bg3);border-radius:6px;border:1px solid var(--bdr)">📋 NWS Damage Assessment Toolkit (DAT) — post-event field surveys conducted by NWS meteorologists. Confirms EF ratings, path length, width, injuries and fatalities. Available 24–72 hours after events. Lower counts than LSR or SPC since many reports are still pending survey.</div>';
   if (activeTab === 'dat')  extraTh = '<th>Max EF</th>';
   if (activeTab === 'warn') extraTh = '<th style="color:#ff6b6b">PDS</th><th style="color:var(--red)">Emergencies</th>';
   if (activeTab === 'lsr')  tableNote = '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;padding:6px 10px;background:var(--bg3);border-radius:6px;border:1px solid var(--bdr)">⚡ IEM Local Storm Reports — preliminary tornado reports filed within hours. Higher counts than confirmed DAT surveys. Capped at 10k total records per query.</div>';
-  if (activeTab === 'spc')  tableNote = '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;padding:6px 10px;background:var(--bg3);border-radius:6px;border:1px solid var(--bdr)">⚡ SPC Preliminary Filtered Tornado Reports — uses SPC filtered files (<code>_rpts_filtered_torn.csv</code>) which remove duplicate sightings of the same tornado. Falls back to raw if filtered unavailable. Matches what AccuWeather and major weather outlets report.</div>';
+  if (activeTab === 'spc')    tableNote = '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;padding:6px 10px;background:var(--bg3);border-radius:6px;border:1px solid var(--bdr)">⚡ SPC Preliminary Filtered Tornado Reports — uses SPC filtered files (<code>_rpts_filtered_torn.csv</code>) which remove duplicate sightings of the same tornado. Falls back to raw if filtered is unavailable.</div>';
+  if (activeTab === 'spcraw') tableNote = '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;padding:6px 10px;background:var(--bg3);border-radius:6px;border:1px solid var(--bdr)">⚡ SPC Raw (Unfiltered) Tornado Reports — every individual sighting as originally submitted. May include multiple reports of the same tornado. Counts are higher than filtered; totals match what raw SPC data feeds show.</div>';
 
   el.innerHTML = tableNote + `<table>
     <thead><tr>
@@ -1170,7 +1227,7 @@ async function fetchVTEC(s, e, phenomena, significance) {
 function switchTab(tab) {
   activeTab = tab;
   // Update tab styles
-  const tabs = { dat:'v-dat', lsr:'v-blu', spc:'v-grn', warn:'v-warn', twatch:'v-twatch', swatch:'v-swatch' };
+  const tabs = { dat:'v-dat', lsr:'v-blu', spc:'v-grn', spcraw:'v-grn', warn:'v-warn', twatch:'v-twatch', swatch:'v-swatch' };
   Object.entries(tabs).forEach(([t, cls]) => {
     const el = document.getElementById(`tab-${t}`);
     if (!el) return;
