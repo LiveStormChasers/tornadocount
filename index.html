@@ -290,7 +290,7 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
     <div class="efc"><div class="efcl ef3">EF3</div><div class="efcv ef3" id="ef3">—</div></div>
     <div class="efc"><div class="efcl ef4">EF4</div><div class="efcv ef4" id="ef4">—</div></div>
     <div class="efc"><div class="efcl ef5">EF5</div><div class="efcv ef5" id="ef5">—</div></div>
-    <div class="efc"><div class="efcl efU">Pending</div><div class="efcv efU" id="efU">—</div></div>
+    <div class="efc"><div class="efcl efU">EF Unknown</div><div class="efcv efU" id="efU">—</div></div>
   </div>
 
   <div class="dual" id="dual" style="display:none">
@@ -681,7 +681,9 @@ async function resolveStates(events) {
 async function fetchDAT(s,e) {
   // Layer 1 of the DAT FeatureServer IS the tornado damage lines layer — every record is a tornado.
   // No efscale filter needed; filtering by it previously dropped NULL/pending-review surveys.
-  const where = encodeURIComponent(`stormdate >= DATE '${s}' AND stormdate <= DATE '${e}'`);
+  // Exclude non-tornado DAT entries: TSTM/WIND = straight-line wind damage, N/A = not applicable
+  // EFU = EF Unknown, confirmed tornado but rating not yet determined — keep these
+  const where = encodeURIComponent(`stormdate >= DATE '${s}' AND stormdate <= DATE '${e}' AND efscale NOT IN ('TSTM/WIND','N/A','TSTM WIND')`);
   const flds  = 'event_id,stormdate,startlat,startlon,efscale,injuries,fatalities,length,width,wfo,comments';
   const url   = `${DAT}?where=${where}&outFields=${flds}&orderByFields=stormdate+DESC&resultRecordCount=2000&f=json`;
   const res   = await fetch(url);
@@ -864,16 +866,18 @@ function renderAll(s,e) {
   const efMaxByState = {};
 
   datEvs.forEach(ev=>{
-    const scale=(ev.efscale||'').toUpperCase().replace('EF UNKNOWN','UNK');
+    const scale=(ev.efscale||'').toUpperCase().replace('EF UNKNOWN','EFU').replace('EF3+','EF3');
     const normScale = scale === 'EF3+' ? 'EF3' : scale;
-    const key = ['EF0','EF1','EF2','EF3','EF4','EF5'].includes(normScale)?normScale:'UNK';
+    const key = ['EF0','EF1','EF2','EF3','EF4','EF5'].includes(normScale) ? normScale
+              : normScale === 'EFU' ? 'EFU' : 'UNK';
     ef[key]=(ef[key]||0)+1;
     const st = ev._state || WFO_ST[ev.wfo?.toUpperCase()?.trim()] || null;
     if (st) {
       stMap[st]=(stMap[st]||0)+1;
       const rank = EF_ORDER[scale] ?? EF_ORDER[normScale] ?? -1;
       if (rank > (EF_ORDER[efMaxByState[st]] ?? -1)) {
-        efMaxByState[st] = normScale !== 'UNK' ? normScale : (efMaxByState[st]||null);
+        // EFU = confirmed tornado, rating unknown; don't use it to set a state max EF
+        efMaxByState[st] = !['UNK','EFU'].includes(normScale) ? normScale : (efMaxByState[st]||null);
       }
     }
     if (ev.injuries>0)   inj+=ev.injuries;
@@ -914,7 +918,8 @@ function renderAll(s,e) {
   ['EF0','EF1','EF2','EF3','EF4','EF5'].forEach(k=>
     document.getElementById(k.toLowerCase()).textContent=(ef[k]||0).toLocaleString()
   );
-  document.getElementById('efU').textContent=(ef['UNK']||0).toLocaleString();
+  // EFU = confirmed tornado, EF rating not yet assigned; UNK = other (shouldn't appear after DAT filter)
+  document.getElementById('efU').textContent=((ef['EFU']||0)+(ef['UNK']||0)).toLocaleString();
 
   document.getElementById('d2-dat').textContent=total.toLocaleString();
   document.getElementById('d2-iem').textContent=iemCnt!==null?iemCnt.total.toLocaleString():'N/A';
