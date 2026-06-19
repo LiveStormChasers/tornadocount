@@ -184,6 +184,8 @@ tbody tr:hover td{background:var(--bg3)}
 .vtab.v-warn  {border-color:rgba(245,166,35,.45);background:rgba(245,166,35,.1);color:var(--amb)}
 .vtab.v-twatch{border-color:rgba(255,107,107,.4);background:rgba(255,107,107,.09);color:#ff6b6b}
 .vtab.v-swatch{border-color:rgba(59,143,232,.45);background:rgba(59,143,232,.1);color:var(--blu)}
+.vtab.v-blu  {border-color:rgba(59,143,232,.45);background:rgba(59,143,232,.1);color:var(--blu)}
+.vtab.v-grn  {border-color:rgba(48,209,88,.45);background:rgba(48,209,88,.1);color:var(--grn)}
 
 /* footer */
 .foot{border-top:1px solid var(--bdr);padding-top:18px;margin-top:18px;
@@ -343,6 +345,8 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
     <!-- Tab bar -->
     <div class="vtab-bar">
       <button class="vtab v-dat"    onclick="switchTab('dat')"   id="tab-dat"   >Tornado Surveys</button>
+      <button class="vtab"          onclick="switchTab('lsr')"   id="tab-lsr"   >LSR Reports</button>
+      <button class="vtab"          onclick="switchTab('spc')"   id="tab-spc"   >SPC Reports</button>
       <button class="vtab"          onclick="switchTab('warn')"  id="tab-warn"  >Tornado Warnings</button>
       <button class="vtab"          onclick="switchTab('twatch')"id="tab-twatch">Tornado Watches</button>
       <button class="vtab"          onclick="switchTab('swatch')"id="tab-swatch">Severe Thunderstorm Watches</button>
@@ -374,12 +378,13 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
 /* ── ENDPOINTS ─────────────────────────────────────── */
 const DAT = 'https://services.dat.noaa.gov/arcgis/rest/services/nws_damageassessmenttoolkit/DamageViewer/FeatureServer/1/query';
 const IEM = 'https://mesonet.agron.iastate.edu/cgi-bin/request/gis/lsr.py';
+const SPC_RPTS = 'https://www.spc.noaa.gov/climo/reports'; // daily YYMMDD_rpts_torn.csv
 // ↓ Replace with your deployed Cloudflare Worker URL after deployment
 const WORKER = 'https://oktornadocount.livestormchaser.workers.dev';
 const PG  = 15;
 
 /* ── STATE ─────────────────────────────────────────── */
-let datEvs = [], iemCnt = null, okData = null, stMap = {}, sortMode = 'count', curPg = 1, preset = 'ytd';
+let datEvs = [], iemCnt = null, spcData = null, okData = null, stMap = {}, sortMode = 'count', curPg = 1, preset = 'ytd';
 let vtecData = { warn: {}, twatch: {}, swatch: {} }, activeTab = 'dat';
 
 /* ── DATES ─────────────────────────────────────────── */
@@ -453,9 +458,10 @@ async function fetchAll() {
   const isFullYearRange = s.endsWith('-01-01') && (e >= `${endYear}-12-31` || e >= new Date().toISOString().substring(0,10));
   const isYTD = s.endsWith('-01-01');
 
-  const [dr, ir, okr, vwr, vtar, vsvr] = await Promise.allSettled([
+  const [dr, ir, sr, okr, vwr, vtar, vsvr] = await Promise.allSettled([
     fetchDAT(s,e),
     fetchIEM(s,e),
+    fetchSPC(s,e),
     isYTD ? fetchOUN(startYear, endYear, s, e) : Promise.resolve(null),
     fetchVTEC(s, e, 'TO', 'W'),
     fetchVTEC(s, e, 'TO', 'A'),
@@ -465,8 +471,9 @@ async function fetchAll() {
   setLoading(false);
   const dOk=dr.status==='fulfilled', iOk=ir.status==='fulfilled', okOk=okr.status==='fulfilled';
   datEvs = dOk ? dr.value : [];
-  iemCnt = iOk ? ir.value : null;
-  okData = okOk ? okr.value : null;
+  iemCnt  = iOk ? ir.value : null;
+  spcData = sr.status === 'fulfilled' ? sr.value : null;
+  okData  = okOk ? okr.value : null;
   vtecData = {
     warn:   vwr.status==='fulfilled'  ? vwr.value  : null,
     twatch: vtar.status==='fulfilled' ? vtar.value : null,
@@ -489,7 +496,8 @@ async function fetchAll() {
   renderAll(s,e);
   const parts=[];
   parts.push(dOk  ? `DAT: ${datEvs.length} surveys`              : 'DAT: unavailable');
-  parts.push(iOk  ? `IEM: ${iemCnt} LSR reports`                 : 'IEM: unavailable');
+  parts.push(iOk  ? `IEM: ${iemCnt.total} LSR reports`            : 'IEM: unavailable');
+  parts.push(spcData ? `SPC: ${spcData.total} tornado reports`     : 'SPC: unavailable');
   parts.push(okOk ? `OUN: ${okData.total} OK tornadoes`          : 'OUN: unavailable');
   if (vtecData.warn)   parts.push(`Warnings: ${vtecData.warn.total}`);
   if (vtecData.twatch) parts.push(`TOR Watches: ${vtecData.twatch.total}`);
@@ -680,13 +688,115 @@ async function fetchDAT(s,e) {
   return (j.features||[]).map(f=>f.attributes);
 }
 
-/* ── FETCH IEM LSR CSV ─────────────────────────────── */
+/* ── FETCH IEM LSR GeoJSON ─────────────────────────────
+   Returns { total, byState } for tornado LSR reports.
+   Uses GeoJSON endpoint (capped at 10k total records) and
+   filters client-side for typetext containing TORNADO.     */
 async function fetchIEM(s,e) {
-  const url = `${IEM}?wfo=ALL&sts=${s}T00:00Z&ets=${e}T23:59Z&type=T&fmt=csv`;
+  const base = 'https://mesonet.agron.iastate.edu/geojson/lsr.geojson';
+  const url  = `${base}?sts=${s}T00:00:00Z&ets=${e}T23:59:59Z&type=T`;
   const res  = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const txt  = await res.text();
-  return txt.trim().split('\n').slice(1).filter(l=>l.trim()).length;
+  if (!res.ok) throw new Error(`IEM HTTP ${res.status}`);
+  const json = await res.json();
+
+  const byState = {};
+  let total = 0;
+  (json.features || []).forEach(f => {
+    const p    = f.properties || {};
+    const type = (p.type || '').toUpperCase();
+    const text = (p.typetext || '').toUpperCase();
+    // Filter to tornado-only LSR records
+    if (type !== 'T' && !text.includes('TORNADO')) return;
+    const st = (p.st || p.state || '').trim().toUpperCase();
+    if (!st || st.length !== 2) return;
+    byState[st] = (byState[st] || 0) + 1;
+    total++;
+  });
+
+  return { total, byState };
+}
+
+/* ── FETCH SPC DAILY TORNADO REPORTS ──────────────────
+   SPC daily storm reports (YYMMDD_rpts_torn.csv)
+   Tornado-only preliminary reports. Usually what storm
+   chasers / weather pages report.                       */
+async function fetchSPC(s, e) {
+  /* SPC daily files (YYMMDD_rpts_torn.csv) cover a CONVECTIVE day:
+     12Z on filename-date through 11:59Z on filename-date+1.
+     Events with Time < 1200 in a file belong to filename-date+1 (UTC).
+     Events with Time >= 1200 belong to filename-date.
+     We fetch files for the range ± 1 day at boundaries to ensure full
+     coverage, then filter each row to the exact requested UTC window.  */
+  const byState = {};
+  let total = 0;
+
+  const rangeStart = new Date(s + 'T00:00:00Z');
+  const rangeEnd   = new Date(e + 'T23:59:59Z');
+
+  // Expand by 1 day each side to catch convective-day boundary events
+  const fetchStart = new Date(rangeStart); fetchStart.setUTCDate(fetchStart.getUTCDate() - 1);
+  const fetchEnd   = new Date(rangeEnd);   fetchEnd.setUTCDate(fetchEnd.getUTCDate() + 1);
+
+  const dates = [];
+  for (let d = new Date(fetchStart); d <= fetchEnd; d.setUTCDate(d.getUTCDate() + 1)) {
+    const yy = String(d.getUTCFullYear()).slice(2);
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    // Store both the filename string and the base date object for later filtering
+    dates.push({ ds: `${yy}${mm}${dd}`,
+                 baseY: d.getUTCFullYear(),
+                 baseM: d.getUTCMonth(),
+                 baseD: d.getUTCDate() });
+  }
+
+  const BATCH = 10;
+  for (let i = 0; i < dates.length; i += BATCH) {
+    await Promise.all(dates.slice(i, i + BATCH).map(async ({ ds, baseY, baseM, baseD }) => {
+      try {
+        // Try filtered file first (removes duplicate sightings of same tornado)
+        // Filtered matches what AccuWeather/news sources report.
+        // Falls back to raw if filtered not available.
+        let txt = null;
+        const filtRes = await fetch(`${SPC_RPTS}/${ds}_rpts_filtered_torn.csv`);
+        if (filtRes.ok) { txt = await filtRes.text(); }
+        else {
+          const rawRes = await fetch(`${SPC_RPTS}/${ds}_rpts_torn.csv`);
+          if (rawRes.ok) txt = await rawRes.text();
+        }
+        if (!txt) return;
+        const lines = txt.trim().split('\n');
+        if (lines.length < 2) return;
+        const h  = lines[0].split(',');
+        const ti = h.indexOf('Time');
+        const si = h.indexOf('State');
+        if (si < 0) return;
+
+        lines.slice(1).forEach(l => {
+          const c    = l.split(',');
+          const st   = (c[si] || '').trim();
+          if (!st || st.length !== 2) return;
+
+          // Derive the actual UTC date of this event from filename + time
+          // SPC convective day: Time >= 1200 → filename date; Time < 1200 → filename date + 1
+          const timeStr = (c[ti] || '0000').padStart(4, '0');
+          const hh = parseInt(timeStr.substring(0, 2), 10);
+          const mn = parseInt(timeStr.substring(2, 4), 10);
+          const baseDate = new Date(Date.UTC(baseY, baseM, baseD, hh, mn));
+          // Adjust: if before 12Z, event is on next calendar day
+          const eventDate = hh < 12
+            ? new Date(Date.UTC(baseY, baseM, baseD + 1, hh, mn))
+            : baseDate;
+
+          // Only count if event falls within the requested range
+          if (eventDate < rangeStart || eventDate > rangeEnd) return;
+
+          byState[st] = (byState[st] || 0) + 1;
+          total++;
+        });
+      } catch(e) {}
+    }));
+  }
+  return { total, byState };
 }
 
 /* ── RENDER ────────────────────────────────────────── */
@@ -719,7 +829,7 @@ function renderAll(s,e) {
   const datEl=document.getElementById('h-dat');
   const iemEl=document.getElementById('h-iem');
   animNum(datEl, total); datEl.style.color=total>0?'var(--red)':'var(--t1)';
-  if (iemCnt!==null) { animNum(iemEl,iemCnt); iemEl.style.color=iemCnt>0?'var(--blu)':'var(--t1)'; }
+  if (iemCnt!==null) { animNum(iemEl,iemCnt.total); iemEl.style.color=iemCnt.total>0?'var(--blu)':'var(--t1)'; }
   else iemEl.textContent='N/A';
 
   animNum(document.getElementById('h-states'), Object.keys(stMap).length);
@@ -753,7 +863,7 @@ function renderAll(s,e) {
   document.getElementById('efU').textContent=(ef['UNK']||0).toLocaleString();
 
   document.getElementById('d2-dat').textContent=total.toLocaleString();
-  document.getElementById('d2-iem').textContent=iemCnt!==null?iemCnt.toLocaleString():'N/A';
+  document.getElementById('d2-iem').textContent=iemCnt!==null?iemCnt.total.toLocaleString():'N/A';
   document.getElementById('dual').style.display='grid';
 
   // Warning summary strip
@@ -803,6 +913,8 @@ function renderStateTable() {
   // Pick data source and config based on active tab
   const cfg = {
     dat:    { map: stMap,                            label: 'Tornado Surveys',             col: 'Tornadoes', color: 'var(--red)', pct: true,  extra: true  },
+    lsr:    { map: iemCnt?.byState          || {}, label: 'Tornado Reports (IEM LSR)',   col: 'Reports',   color: 'var(--blu)', pct: false, extra: false },
+    spc:    { map: spcData?.byState          || {}, label: 'Tornado Reports (SPC Daily)', col: 'Reports',   color: 'var(--grn)', pct: false, extra: false },
     warn:   { map: vtecData?.warn?.byState   || {}, label: 'Tornado Warnings',            col: 'Warnings',  color: 'var(--amb)', pct: false, extra: true  },
     twatch: { map: vtecData?.twatch?.byState || {}, label: 'Tornado Watches',             col: 'Watches',   color: '#ff6b6b',    pct: false, extra: false },
     swatch: { map: vtecData?.swatch?.byState || {}, label: 'Severe Thunderstorm Watches', col: 'Watches',   color: 'var(--blu)', pct: false, extra: false },
@@ -826,10 +938,13 @@ function renderStateTable() {
 
   // Extra column headers
   let extraTh = '';
+  let tableNote = '';
   if (activeTab === 'dat')  extraTh = '<th>Max EF</th>';
   if (activeTab === 'warn') extraTh = '<th style="color:#ff6b6b">PDS</th><th style="color:var(--red)">Emergencies</th>';
+  if (activeTab === 'lsr')  tableNote = '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;padding:6px 10px;background:var(--bg3);border-radius:6px;border:1px solid var(--bdr)">⚡ IEM Local Storm Reports — preliminary tornado reports filed within hours. Higher counts than confirmed DAT surveys. Capped at 10k total records per query.</div>';
+  if (activeTab === 'spc')  tableNote = '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;padding:6px 10px;background:var(--bg3);border-radius:6px;border:1px solid var(--bdr)">⚡ SPC Preliminary Filtered Tornado Reports — uses SPC filtered files (<code>_rpts_filtered_torn.csv</code>) which remove duplicate sightings of the same tornado. Falls back to raw if filtered unavailable. Matches what AccuWeather and major weather outlets report.</div>';
 
-  el.innerHTML = `<table>
+  el.innerHTML = tableNote + `<table>
     <thead><tr>
       <th>State</th>
       <th>${cfg.col}</th>
@@ -1055,7 +1170,7 @@ async function fetchVTEC(s, e, phenomena, significance) {
 function switchTab(tab) {
   activeTab = tab;
   // Update tab styles
-  const tabs = { dat:'v-dat', warn:'v-warn', twatch:'v-twatch', swatch:'v-swatch' };
+  const tabs = { dat:'v-dat', lsr:'v-blu', spc:'v-grn', warn:'v-warn', twatch:'v-twatch', swatch:'v-swatch' };
   Object.entries(tabs).forEach(([t, cls]) => {
     const el = document.getElementById(`tab-${t}`);
     if (!el) return;
