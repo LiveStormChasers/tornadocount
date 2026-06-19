@@ -683,7 +683,7 @@ async function fetchDAT(s,e) {
   // No efscale filter needed; filtering by it previously dropped NULL/pending-review surveys.
   // Exclude non-tornado DAT entries: TSTM/WIND = straight-line wind damage, N/A = not applicable
   // EFU = EF Unknown, confirmed tornado but rating not yet determined — keep these
-  const where = encodeURIComponent(`stormdate >= DATE '${s}' AND stormdate <= DATE '${e}' AND efscale NOT IN ('TSTM/WIND','N/A','TSTM WIND')`);
+  const where = encodeURIComponent(`stormdate >= DATE '${s}' AND stormdate <= DATE '${e}' AND efscale NOT IN ('TSTM/Wind','TSTM/WIND','N/A')`);
   const flds  = 'event_id,stormdate,startlat,startlon,efscale,injuries,fatalities,length,width,wfo,comments';
   const url   = `${DAT}?where=${where}&outFields=${flds}&orderByFields=stormdate+DESC&resultRecordCount=2000&f=json`;
   const res   = await fetch(url);
@@ -866,7 +866,10 @@ function renderAll(s,e) {
   const efMaxByState = {};
 
   datEvs.forEach(ev=>{
-    const scale=(ev.efscale||'').toUpperCase().replace('EF UNKNOWN','EFU').replace('EF3+','EF3');
+    const rawScale = (ev.efscale||'').trim();
+    // Skip non-tornado DAT entries that slipped past the server-side filter
+    if (rawScale.toUpperCase().includes('TSTM') || rawScale.toUpperCase() === 'N/A') return;
+    const scale = rawScale.toUpperCase().replace('EF UNKNOWN','EFU').replace('EF3+','EF3');
     const normScale = scale === 'EF3+' ? 'EF3' : scale;
     const key = ['EF0','EF1','EF2','EF3','EF4','EF5'].includes(normScale) ? normScale
               : normScale === 'EFU' ? 'EFU' : 'UNK';
