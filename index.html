@@ -863,7 +863,8 @@ function renderAll(s,e) {
   stMap={};
 
   const EF_ORDER = {'EF0':0,'EF1':1,'EF2':2,'EF3':3,'EF3+':3,'EF4':4,'EF5':5};
-  const efMaxByState = {};
+  const efMaxByState  = {};
+  const pathMilesByState = {};
 
   datEvs.forEach(ev=>{
     const rawScale = (ev.efscale||'').trim();
@@ -877,6 +878,7 @@ function renderAll(s,e) {
     const st = ev._state || WFO_ST[ev.wfo?.toUpperCase()?.trim()] || null;
     if (st) {
       stMap[st]=(stMap[st]||0)+1;
+      pathMilesByState[st] = +(((pathMilesByState[st]||0) + (ev.length||0)).toFixed(2));
       const rank = EF_ORDER[scale] ?? EF_ORDER[normScale] ?? -1;
       if (rank > (EF_ORDER[efMaxByState[st]] ?? -1)) {
         // EFU = confirmed tornado, rating unknown; don't use it to set a state max EF
@@ -914,8 +916,10 @@ function renderAll(s,e) {
   const casEl=document.getElementById('h-cas');
   casEl.textContent=`${inj.toLocaleString()} / ${fat.toLocaleString()}`;
   casEl.style.color=fat>0?'var(--red)':'var(--t1)';
+  const totalPathMiles = Object.values(window._pathMilesByState||{}).reduce((a,b)=>a+b,0);
+  const pathMilesLabel = totalPathMiles > 0 ? ` · ${Math.round(totalPathMiles).toLocaleString()} total path mi` : '';
   const okAdj = (okData && okData.total > 0) ? ` · OK adjusted to OUN (${okData.total})` : '';
-  document.getElementById('h-range').textContent=`${fmtD(s)} → ${fmtD(e)}${okAdj}`;
+  document.getElementById('h-range').textContent=`${fmtD(s)} → ${fmtD(e)}${okAdj}${pathMilesLabel}`;
   document.getElementById('ts-lbl').textContent='Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 
   ['EF0','EF1','EF2','EF3','EF4','EF5'].forEach(k=>
@@ -956,7 +960,8 @@ function renderAll(s,e) {
   animNum(document.getElementById('h-dat'), adjustedTotal);
   document.getElementById('h-dat').style.color = adjustedTotal > 0 ? 'var(--red)' : 'var(--t1)';
 
-  window._efMaxByState = efMaxByState;
+  window._efMaxByState    = efMaxByState;
+  window._pathMilesByState = pathMilesByState;
   renderStateTable(); curPg=1; renderEventsTable();
 }
 
@@ -1003,7 +1008,7 @@ function renderStateTable() {
   let extraTh = '';
   let tableNote = '';
   if (activeTab === 'dat') tableNote = '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;padding:6px 10px;background:var(--bg3);border-radius:6px;border:1px solid var(--bdr)">📋 NWS Damage Assessment Toolkit (DAT) — post-event field surveys conducted by NWS meteorologists. Confirms EF ratings, path length, width, injuries and fatalities. Available 24–72 hours after events. Lower counts than LSR or SPC since many reports are still pending survey.</div>';
-  if (activeTab === 'dat')  extraTh = '<th>Max EF</th>';
+  if (activeTab === 'dat')  extraTh = '<th>Max EF</th><th style="color:var(--t2)">Path Miles</th>';
   if (activeTab === 'warn') extraTh = '<th style="color:#ff6b6b">PDS</th><th style="color:var(--red)">Emergencies</th>';
   if (activeTab === 'lsr')  tableNote = '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;padding:6px 10px;background:var(--bg3);border-radius:6px;border:1px solid var(--bdr)">⚡ IEM Local Storm Reports — preliminary tornado reports filed within hours. Higher counts than confirmed DAT surveys. Capped at 10k total records per query.</div>';
   if (activeTab === 'spc')    tableNote = '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;padding:6px 10px;background:var(--bg3);border-radius:6px;border:1px solid var(--bdr)">⚡ SPC Preliminary Filtered Tornado Reports — uses SPC filtered files (<code>_rpts_filtered_torn.csv</code>) which remove duplicate sightings of the same tornado. Falls back to raw if filtered is unavailable.</div>';
@@ -1027,9 +1032,14 @@ function renderStateTable() {
       if (activeTab === 'dat') {
         const maxEF = (window._efMaxByState||{})[st];
         const efColor = EF_COL[maxEF] || 'var(--t3)';
-        extraTd = maxEF
+        const miles = (window._pathMilesByState||{})[st];
+        const milesStr = miles >= 100 ? Math.round(miles).toLocaleString()
+                       : miles >= 10  ? miles.toFixed(1)
+                       : miles        ? miles.toFixed(2) : '—';
+        extraTd = (maxEF
           ? `<td><span style="font-family:var(--mono);font-size:11px;font-weight:600;color:${efColor};background:${efColor}18;padding:2px 8px;border-radius:4px;border:1px solid ${efColor}44">${maxEF}</span></td>`
-          : `<td style="color:var(--t3);font-size:11px">—</td>`;
+          : `<td style="color:var(--t3);font-size:11px">—</td>`)
+          + `<td style="font-family:var(--mono);font-size:12px;color:var(--t2)">${milesStr}</td>`;
       }
       if (activeTab === 'warn') {
         const pds  = (vtecData?.warn?.pdsByState       ||{})[st] || 0;
