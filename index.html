@@ -188,11 +188,14 @@ tbody tr:hover td{background:var(--bg3)}
 .vtab.v-grn  {border-color:rgba(48,209,88,.45);background:rgba(48,209,88,.1);color:var(--grn)}
 
 /* ── path miles bars ── */
-.pm-row{display:grid;grid-template-columns:110px 1fr 70px;align-items:center;gap:10px}
-.pm-state{font-size:12px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pm-bar-wrap{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden}
-.pm-bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#5acdad,#2db88e);transition:width .4s ease}
-.pm-val{font-family:var(--mono);font-size:11px;color:var(--t3);text-align:right}
+.pm-row{display:grid;grid-template-columns:140px 1fr;align-items:center;gap:14px;padding:2px 0}
+.pm-state{font-size:14px;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pm-bar-wrap{position:relative;height:22px;background:transparent;border-radius:3px;overflow:visible}
+.pm-bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#c0392b 0%,#e8742a 70%,#f5a623 100%);position:relative;display:flex;align-items:center;justify-content:flex-end;min-width:4px;transition:width .5s ease,background .3s ease}
+.pm-val{position:absolute;right:-2px;transform:translateX(100%);font-size:13px;font-weight:700;color:var(--t1);padding-left:10px;white-space:nowrap}
+.pm-swatch{width:20px;height:20px;border-radius:4px;border:2px solid transparent;cursor:pointer;transition:border-color .15s,transform .15s;flex-shrink:0}
+.pm-swatch:hover{transform:scale(1.15)}
+.pm-swatch.active{border-color:var(--t1)}
 
 /* footer */
 .foot{border-top:1px solid var(--bdr);padding-top:18px;margin-top:18px;
@@ -302,17 +305,41 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
 
   <!-- ── Path Miles by State ─────────────────────────────────────────── -->
   <div id="path-miles-section" style="display:none;margin-bottom:24px">
-    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px">
       <div>
-        <h2 style="font-size:14px;letter-spacing:.1em;text-transform:uppercase;color:var(--t2);margin:0">
+        <h2 style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--t2);margin:0;font-weight:500">
           Tornado Path Miles by State
         </h2>
-        <div style="font-size:11px;color:var(--t3);margin-top:3px">
+        <div style="font-size:11px;color:var(--t3);margin-top:4px">
           NWS DAT confirmed surveys · combined track length per state ·
           <span style="color:var(--t2);font-family:var(--mono)" id="pm-total">—</span> total miles
         </div>
       </div>
-      <div style="font-size:11px;color:var(--t3)">DAT field surveys only</div>
+      <!-- colour swatches -->
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+        <span style="font-size:10px;color:var(--t3);margin-right:2px;letter-spacing:.05em;text-transform:uppercase">Color</span>
+        <div class="pm-swatch active" id="pm-c0" title="Fire"
+             style="background:linear-gradient(135deg,#c0392b,#f5a623)"
+             onclick="setPmColor(0)"></div>
+        <div class="pm-swatch" id="pm-c1" title="Ocean"
+             style="background:linear-gradient(135deg,#1a6b8a,#5acdad)"
+             onclick="setPmColor(1)"></div>
+        <div class="pm-swatch" id="pm-c2" title="Storm"
+             style="background:linear-gradient(135deg,#4a2db5,#c850c0)"
+             onclick="setPmColor(2)"></div>
+        <div class="pm-swatch" id="pm-c3" title="Grass"
+             style="background:linear-gradient(135deg,#1a7a2e,#85d94e)"
+             onclick="setPmColor(3)"></div>
+        <div class="pm-swatch" id="pm-c4" title="Steel"
+             style="background:linear-gradient(135deg,#3a4a5a,#8ab4d4)"
+             onclick="setPmColor(4)"></div>
+        <div class="pm-swatch" id="pm-c5" title="Crimson"
+             style="background:linear-gradient(135deg,#8b0000,#ff2222)"
+             onclick="setPmColor(5)"></div>
+        <div class="pm-swatch" id="pm-c6" title="Ember"
+             style="background:linear-gradient(135deg,#7a1a1a,#e05555)"
+             onclick="setPmColor(6)"></div>
+      </div>
     </div>
     <div id="path-miles-bars" style="display:grid;gap:6px"></div>
   </div>
@@ -997,6 +1024,31 @@ function sortState(m) {
   renderStateTable();
 }
 
+// Color palettes for path miles bars
+const PM_COLORS = [
+  'linear-gradient(90deg,#c0392b 0%,#e8742a 70%,#f5a623 100%)', // 0 Fire
+  'linear-gradient(90deg,#1a6b8a 0%,#2eaebf 60%,#5acdad 100%)', // 1 Ocean
+  'linear-gradient(90deg,#4a2db5 0%,#9b3cc8 60%,#c850c0 100%)', // 2 Storm
+  'linear-gradient(90deg,#1a7a2e 0%,#4ab840 60%,#85d94e 100%)', // 3 Grass
+  'linear-gradient(90deg,#3a4a5a 0%,#5a7f9a 60%,#8ab4d4 100%)', // 4 Steel
+  'linear-gradient(90deg,#8b0000 0%,#cc0000 50%,#ff2222 100%)', // 5 Crimson
+  'linear-gradient(90deg,#7a1a1a 0%,#b83232 55%,#e05555 100%)', // 6 Ember
+];
+let pmColorIdx = 0;
+
+function setPmColor(idx) {
+  pmColorIdx = idx;
+  // Update active swatch
+  for (let i = 0; i < PM_COLORS.length; i++) {
+    const sw = document.getElementById('pm-c' + i);
+    if (sw) sw.classList.toggle('active', i === idx);
+  }
+  // Re-apply gradient to all bars
+  document.querySelectorAll('.pm-bar-fill').forEach(el => {
+    el.style.background = PM_COLORS[idx];
+  });
+}
+
 function renderPathMiles() {
   const pm   = window._pathMilesByState || {};
   const keys = Object.keys(pm);
@@ -1010,19 +1062,22 @@ function renderPathMiles() {
   const max    = pm[sorted[0]] || 1;
   const total  = Object.values(pm).reduce((a,b)=>a+b,0);
 
-  document.getElementById('pm-total').textContent = Math.round(total).toLocaleString() + ' mi';
+  document.getElementById('pm-total').textContent = Math.round(total).toLocaleString() + ' miles';
 
   bars.innerHTML = sorted.map(st => {
     const miles = pm[st];
-    const pct   = (miles / max * 100).toFixed(1);
-    const label = miles >= 100 ? Math.round(miles).toLocaleString()
-                : miles >= 10  ? miles.toFixed(1)
-                : miles.toFixed(2);
+    const pct   = (miles / max * 90).toFixed(1);
+    const label = (miles >= 100 ? Math.round(miles).toLocaleString()
+                 : miles >= 10  ? miles.toFixed(1)
+                 : miles.toFixed(2)) + ' miles';
     const name  = ST_N[st] || st;
     return `<div class="pm-row">
       <div class="pm-state" title="${name}">${name}</div>
-      <div class="pm-bar-wrap"><div class="pm-bar-fill" style="width:${pct}%"></div></div>
-      <div class="pm-val">${label} mi</div>
+      <div class="pm-bar-wrap">
+        <div class="pm-bar-fill" style="width:${pct}%;background:${PM_COLORS[pmColorIdx]}">
+          <span class="pm-val">${label}</span>
+        </div>
+      </div>
     </div>`;
   }).join('');
 
