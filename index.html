@@ -188,7 +188,8 @@ tbody tr:hover td{background:var(--bg3)}
 .vtab.v-grn  {border-color:rgba(48,209,88,.45);background:rgba(48,209,88,.1);color:var(--grn)}
 
 /* ── path miles bars ── */
-.pm-row{display:grid;grid-template-columns:140px 1fr;align-items:center;gap:14px;padding:2px 0}
+.pm-row{display:grid;grid-template-columns:28px 140px 1fr;align-items:center;gap:12px;padding:2px 0}
+.pm-rank{font-size:14px;font-weight:600;color:#ffffff;font-family:var(--mono);text-align:right;line-height:1}
 .pm-state{font-size:14px;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pm-bar-wrap{position:relative;height:22px;background:transparent;border-radius:3px;overflow:visible}
 .pm-bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#c0392b 0%,#e8742a 70%,#f5a623 100%);position:relative;display:flex;align-items:center;justify-content:flex-end;min-width:4px;transition:width .5s ease,background .3s ease}
@@ -1064,7 +1065,7 @@ function renderPathMiles() {
 
   document.getElementById('pm-total').textContent = Math.round(total).toLocaleString() + ' miles';
 
-  bars.innerHTML = sorted.map(st => {
+  bars.innerHTML = sorted.map((st, idx) => {
     const miles = pm[st];
     const pct   = (miles / max * 90).toFixed(1);
     const label = (miles >= 100 ? Math.round(miles).toLocaleString()
@@ -1072,6 +1073,7 @@ function renderPathMiles() {
                  : miles.toFixed(2)) + ' miles';
     const name  = ST_N[st] || st;
     return `<div class="pm-row">
+      <div class="pm-rank">${idx + 1}.</div>
       <div class="pm-state" title="${name}">${name}</div>
       <div class="pm-bar-wrap">
         <div class="pm-bar-fill" style="width:${pct}%;background:${PM_COLORS[pmColorIdx]}">
