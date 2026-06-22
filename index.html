@@ -540,8 +540,8 @@ async function fetchOUN(startYear, endYear, startDate = null, endDate = null) {
   // that fall within the requested window.
   // by_month is e.g. { January: 3, February: 0, March: 12, ... }
   if (startDate && endDate && merged.by_month && Object.keys(merged.by_month).length > 0) {
-    const MONTHS = ['January','February','March','April','May','June',
-                    'July','August','September','October','November','December'];
+    // Worker returns abbreviated month names (Jan, Feb, Mar...) matching JS Date.toLocaleString short format
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const sDate = new Date(startDate + 'T00:00:00Z');
     const eDate = new Date(endDate   + 'T23:59:59Z');
     const year  = startYear; // single-year ranges only
@@ -976,8 +976,8 @@ function renderStateTable() {
   const cfg = {
     dat:    { map: stMap,                            label: 'Tornado Surveys',             col: 'Tornadoes', color: 'var(--red)', pct: true,  extra: true  },
     lsr:    { map: iemCnt?.byState          || {}, label: 'Tornado Reports (IEM LSR)',   col: 'Reports',   color: 'var(--blu)', pct: false, extra: false },
-    spc:    { map: spcData?.byState    || {}, label: 'SPC Filtered Tornado Reports',   col: 'Reports', color: 'var(--grn)', pct: false, extra: false },
-    spcraw: { map: spcRawData?.byState || {}, label: 'SPC Raw (Unfiltered) Tornado Reports', col: 'Reports', color: '#aaaaaa',    pct: false, extra: false },
+    spc:    { map: spcData?.byState || {}, label: 'SPC Filtered Tornado Reports',   col: 'Reports', color: 'var(--grn)', pct: false, extra: false },
+    spcraw: { map: spcRawData?.byState || {},                                                                                      label: 'SPC Raw (Unfiltered) Tornado Reports', col: 'Reports', color: '#aaaaaa',    pct: false, extra: false },
     warn:   { map: vtecData?.warn?.byState   || {}, label: 'Tornado Warnings',            col: 'Warnings',  color: 'var(--amb)', pct: false, extra: true  },
     twatch: { map: vtecData?.twatch?.byState || {}, label: 'Tornado Watches',             col: 'Watches',   color: '#ff6b6b',    pct: false, extra: false },
     swatch: { map: vtecData?.swatch?.byState || {}, label: 'Severe Thunderstorm Watches', col: 'Watches',   color: 'var(--blu)', pct: false, extra: false },
@@ -1038,9 +1038,14 @@ function renderStateTable() {
                 + `<td style="font-family:var(--mono);font-size:12px;color:${emrg>0?'var(--red)':'var(--t3)'}">${emrg||'—'}</td>`;
       }
 
+      // For SPC tab, show OUN count alongside SPC count for Oklahoma
+      const spcOunNote = (activeTab==='spc' || activeTab==='spcraw') && st==='OK' && ounTotal
+        ? ` <span style="font-size:9px;color:var(--amb);font-family:var(--mono);font-weight:500;letter-spacing:.05em;vertical-align:middle" title="NWS Norman (OUN) confirmed count">OUN: ${ounTotal}</span>`
+        : '';
+
       return `<tr>
         <td class="tds">${ST_N[st]||st}</td>
-        <td class="tdc" style="color:${cfg.color}">${n}${badge}</td>
+        <td class="tdc" style="color:${cfg.color}">${n}${badge}${spcOunNote}</td>
         <td><div class="bw"><div class="bf" style="width:${Math.round(n/mx*100)}%;background:${barColor}"></div></div></td>
         <td style="color:var(--t3);font-size:11px">${pctDenom>0?(n/pctDenom*100).toFixed(1):'—'}%</td>
         ${extraTd}
