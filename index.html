@@ -372,6 +372,11 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
           style="font-size:10px;color:var(--t3);text-decoration:none;white-space:nowrap">
           → mapchart.net ↗
         </a>
+        <button id="map-export-btn" onclick="exportMapPNG()"
+          style="font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:var(--t1);cursor:pointer;font-family:var(--mono);letter-spacing:.04em;flex-shrink:0;transition:all .2s"
+          title="Export map as high-resolution PNG">
+          ⬇ Export PNG
+        </button>
       </div>
     </div>
     <div id="spc-map-wrap" style="width:100%;background:var(--bg2);border-radius:10px;border:1px solid var(--bdr);overflow:hidden;position:relative">
@@ -1168,6 +1173,66 @@ function generateMapChartJSON(byState, title, ranges) {
   });
 }
 
+async function exportMapPNG() {
+  const svg   = document.getElementById('spc-map-svg');
+  const btn   = document.getElementById('map-export-btn');
+  if (!svg || svg.style.display === 'none') {
+    alert('Load data first by clicking Update.');
+    return;
+  }
+
+  const orig = btn.textContent;
+  btn.textContent = '⏳ Exporting…';
+
+  try {
+    const scale  = 3; // 3× resolution for high quality
+    const W      = svg.viewBox.baseVal.width  || svg.clientWidth  || 900;
+    const H      = svg.viewBox.baseVal.height || svg.clientHeight || 560;
+
+    // Serialize SVG with white text override for export clarity
+    const clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    // Make sure background is included
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('width', W); bg.setAttribute('height', H);
+    bg.setAttribute('fill', '#0d0f14');
+    clone.insertBefore(bg, clone.firstChild);
+
+    const svgStr  = new XMLSerializer().serializeToString(clone);
+    const svgBlob = new Blob([svgStr], {type: 'image/svg+xml;charset=utf-8'});
+    const url     = URL.createObjectURL(svgBlob);
+
+    const img = new Image();
+    img.onload = () => {
+      const canvas  = document.createElement('canvas');
+      canvas.width  = W * scale;
+      canvas.height = H * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+
+      // Download
+      const link = document.createElement('a');
+      link.download = `tornado-map-${new Date().toISOString().slice(0,10)}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+
+      btn.textContent = '✓ Downloaded!';
+      btn.style.color = 'var(--grn)';
+      setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 2500);
+    };
+    img.onerror = () => {
+      btn.textContent = orig;
+      alert('Export failed — try right-clicking the map and saving as image instead.');
+    };
+    img.src = url;
+  } catch(e) {
+    btn.textContent = orig;
+    console.error('Export error:', e);
+  }
+}
+
 async function copyWarnMapChartJSON() {
   const byState = vtecData?.warn?.byState || {};
   if (!Object.keys(byState).length) {
@@ -1236,7 +1301,7 @@ const MAP_RANGES = [
   { min:81,  max:100, color:'#6b3fa0', label:'81–100' },
   { min:101, max:Infinity, color:'#d94fbd', label:'101+' },
 ];
-const MAP_ZERO_COLOR  = '#2a2f3a';
+const MAP_ZERO_COLOR  = '#d1dbdd';
 const MAP_NO_DATA     = '#1e2330';
 
 function getMapColor(n) {
@@ -1287,7 +1352,7 @@ async function renderSPCMap() {
   const us = await fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json').then(r=>r.json());
 
   const W = wrap.clientWidth || 900;
-  const H = Math.round(W * 0.62);
+  const H = Math.round(W * 0.65);
 
   const projection = d3.geoAlbersUsa().scale(W * 1.25).translate([W/2, H/2]);
   const path = d3.geoPath().projection(projection);
@@ -1316,7 +1381,7 @@ async function renderSPCMap() {
       return getMapColor(byState[abbr] || 0);
     })
     .attr('stroke', '#0d0f14')
-    .attr('stroke-width', 0.8)
+    .attr('stroke-width', 1.2)
     .on('mousemove', function(event, d) {
       const abbr  = FIPS[String(d.id).padStart(2,'0')];
       const count = byState[abbr] || 0;
@@ -1329,22 +1394,108 @@ async function renderSPCMap() {
     })
     .on('mouseleave', () => { tooltip.style.display = 'none'; });
 
-  // Add state count labels
+  // Load Anton font
+  if (!document.getElementById('anton-font')) {
+    const lnk = document.createElement('link');
+    lnk.id   = 'anton-font';
+    lnk.rel  = 'stylesheet';
+    lnk.href = 'https://fonts.googleapis.com/css2?family=Anton&display=swap';
+    document.head.appendChild(lnk);
+  }
+  await new Promise(r => setTimeout(r, 400)); // let font load
+
+  const fontSize = Math.max(16, W / 48);
+  const FONT = "'Anton', 'Arial Black', sans-serif";
+
+  // Small NE states: use ABSOLUTE label positions (as % of W/H) to
+  // guarantee no line crossings. Values tuned to AlbersUSA projection.
+  // { lx: fraction of W, ly: fraction of H }
+  // Right-column labels: x=0.97*W, y positions in strict north-south order
+  // so lines NEVER cross. DC/WV/VA also included to prevent fallback crossings.
+  const ABS_LABELS = {
+    'VT': { lx:.78, ly:.18 },
+    'NH': { lx:.84, ly:.16 },
+    'MA': { lx:.97, ly:.23 },
+    'RI': { lx:.97, ly:.29 },
+    'CT': { lx:.97, ly:.35 },
+    'NJ': { lx:.97, ly:.41 },
+    'DE': { lx:.97, ly:.47 },
+    'MD': { lx:.97, ly:.53 },
+    'DC': { lx:.97, ly:.58 },
+  };
+  const CALLOUTS = {}; // all small states handled via ABS_LABELS above
+
+  // Manual centroid corrections for oddly shaped states
+  const CENTROID_FIX = {
+    'LA': [-55, -10], // push west into main body of LA, away from MS border
+    'MI': [0,  12],  // lower peninsula centroid is better slightly south
+    'FL': [0,   8],
+  };
+
+  const addLabel = (x, y, text, anchor='middle') => {
+    const g = svgEl.append('g').attr('pointer-events','none');
+    g.append('text')
+      .attr('x', x).attr('y', y)
+      .attr('text-anchor', anchor)
+      .attr('font-size', fontSize).attr('font-family', FONT)
+      .attr('fill', 'none')
+      .attr('stroke', '#000').attr('stroke-width', fontSize * 0.45)
+      .attr('stroke-linejoin', 'round').attr('stroke-linecap', 'round')
+      .text(text);
+    g.append('text')
+      .attr('x', x).attr('y', y)
+      .attr('text-anchor', anchor)
+      .attr('font-size', fontSize).attr('font-family', FONT)
+      .attr('fill', '#ffffff')
+      .text(text);
+  };
+
   states.forEach(d => {
-    const abbr  = FIPS[String(d.id).padStart(2,'0')];
-    const count = byState[abbr] || 0;
-    const label = count > 0 ? String(count) : '0';
-    const centroid = path.centroid(d);
-    if (!centroid || isNaN(centroid[0])) return;
-    svgEl.append('text')
-      .attr('x', centroid[0])
-      .attr('y', centroid[1] + 4)
-      .attr('text-anchor', 'middle')
-      .attr('font-size', W < 600 ? 7 : 9)
-      .attr('font-weight', '700')
-      .attr('fill', count >= 41 ? '#fff' : count > 0 ? '#111' : '#444')
-      .attr('pointer-events', 'none')
-      .text(label);
+    const abbr   = FIPS[String(d.id).padStart(2,'0')];
+    const count  = byState[abbr] || 0;
+    const label  = String(count);
+    let   c      = path.centroid(d);
+    if (!c || isNaN(c[0])) return;
+
+    // Apply manual centroid correction
+    if (CENTROID_FIX[abbr]) {
+      c = [c[0] + CENTROID_FIX[abbr][0], c[1] + CENTROID_FIX[abbr][1]];
+    }
+
+    const bounds = path.bounds(d);
+    const sw = bounds[1][0] - bounds[0][0];
+    const sh = bounds[1][1] - bounds[0][1];
+    const isSmall = sw < fontSize * 2.2 || sh < fontSize * 1.2;
+
+    if (ABS_LABELS[abbr]) {
+      // Absolute-positioned label — clean, no-crossing approach for NE cluster
+      const lx = ABS_LABELS[abbr].lx * W;
+      const ly = ABS_LABELS[abbr].ly * H;
+      svgEl.append('circle')
+        .attr('cx', c[0]).attr('cy', c[1]).attr('r', 2.5)
+        .attr('fill', '#fff').attr('stroke', '#000').attr('stroke-width', 1.2)
+        .attr('pointer-events', 'none');
+      svgEl.append('line')
+        .attr('x1', c[0]).attr('y1', c[1]).attr('x2', lx).attr('y2', ly)
+        .attr('stroke', '#fff').attr('stroke-width', 1.2)
+        .attr('pointer-events', 'none');
+      addLabel(lx, ly, label);
+    } else if (CALLOUTS[abbr] || isSmall) {
+      const off = CALLOUTS[abbr] || [48, 0];
+      const lx = c[0] + off[0];
+      const ly = c[1] + off[1];
+      svgEl.append('circle')
+        .attr('cx', c[0]).attr('cy', c[1]).attr('r', 2.5)
+        .attr('fill', '#fff').attr('stroke', '#000').attr('stroke-width', 1.2)
+        .attr('pointer-events', 'none');
+      svgEl.append('line')
+        .attr('x1', c[0]).attr('y1', c[1]).attr('x2', lx).attr('y2', ly)
+        .attr('stroke', '#fff').attr('stroke-width', 1.2)
+        .attr('pointer-events', 'none');
+      addLabel(lx, ly + fontSize * 0.38, label);
+    } else {
+      addLabel(c[0], c[1] + fontSize * 0.38, label);
+    }
   });
 
   loading.style.display = 'none';
