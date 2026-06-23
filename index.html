@@ -1530,7 +1530,8 @@ async function renderSPCMap() {
           const st = ev._state;
           if (st) stMap[st] = (stMap[st]||0) + 1;
         });
-        console.log(`[GeoCorrect] Fixed ${corrected} events. IN=${stMap['IN']}, IL=${stMap['IL']}, MI=${stMap['MI']}`);
+        if (okData?.total > 0) stMap['OK'] = okData.total;
+        console.log(`[GeoCorrect] Fixed ${corrected} events. IN=${stMap['IN']}, IL=${stMap['IL']}, MI=${stMap['MI']}, OK=${stMap['OK']}`);
         // Re-render map if in DAT mode
         if (_mapMode === 'dat') renderSPCMap();
       }
@@ -2112,7 +2113,7 @@ const WFO_ST = {
   GGW:'MT',GID:'NE',GJT:'CO',GLD:'KS',GRB:'WI',GRR:'MI',GSP:'SC',GYX:'ME',
   HFO:'HI',HGX:'TX',HNX:'CA',HUN:'AL',
   ICT:'KS',ILM:'NC',ILN:'OH',ILX:'IL',IND:'IN',IWX:'IN',
-  JAX:'FL',JKL:'KY',KEY:'FL',
+  JAN:'MS',JAX:'FL',JKL:'KY',KEY:'FL',
   LBF:'NE',LCH:'LA',LIX:'LA',LKN:'NV',LMK:'KY',LOT:'IL',LOX:'CA',LSX:'MO',LUB:'TX',LWX:'MD',LZK:'AR',
   MAF:'TX',MEG:'TN',MFL:'FL',MFR:'OR',MHX:'NC',MKX:'WI',MLB:'FL',MOB:'AL',MPX:'MN',MQT:'MI',MRX:'TN',MSO:'MT',MTR:'CA',
   OAX:'NE',OHX:'TN',OKX:'NY',OTX:'WA',OUN:'OK',
