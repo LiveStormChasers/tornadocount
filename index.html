@@ -1416,7 +1416,7 @@ async function renderSPCMap() {
   const svgEl = d3.select('#spc-map-svg')
     .attr('viewBox', `0 0 ${W} ${H}`)
     .attr('width', '100%')
-    .attr('height', 'auto')
+    .attr('height', H)
     .style('display','block');
 
   svgEl.selectAll('*').remove();
@@ -1522,10 +1522,20 @@ async function renderSPCMap() {
 
     if (ABS_LABELS[abbr]) {
       // Use saved position if user has dragged, otherwise use default
-      // Load persisted callout positions — always reload to catch any new drags
+      // Positions are hardcoded in ABS_LABELS — localStorage only used for
+  // post-deploy drag adjustments. Clear stale 924px coords if present.
   try {
     const _lsVal = localStorage.getItem('tornadomap_callouts');
-    window._calloutPos = _lsVal ? JSON.parse(_lsVal) : {};
+    const _lsParsed = _lsVal ? JSON.parse(_lsVal) : {};
+    // Detect old 924-space coords (NH.x would be ~809 in old, ~840 in new)
+    const _nhX = _lsParsed?.NH?.x;
+    if (_nhX && _nhX < 820) {
+      // Stale 924px coords — clear them so hardcoded presets are used
+      localStorage.removeItem('tornadomap_callouts');
+      window._calloutPos = {};
+    } else {
+      window._calloutPos = _lsParsed;
+    }
   } catch(e) { window._calloutPos = {}; }
       const saved  = window._calloutPos[abbr];
       const preset = ABS_LABELS[abbr];
