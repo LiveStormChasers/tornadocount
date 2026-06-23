@@ -1402,8 +1402,8 @@ async function renderSPCMap() {
   svg.style.display = 'none';
   const us = await fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json').then(r=>r.json());
 
-  const W = wrap.clientWidth || 900;
-  const H = Math.round(W * 0.65);
+  // Fixed 960×620 coordinate space — SVG scales via CSS width:100%
+  const W = 960, H = 620;
 
   const projection = d3.geoAlbersUsa().scale(W * 1.25).translate([W/2, H/2]);
   const path = d3.geoPath().projection(projection);
@@ -1415,8 +1415,8 @@ async function renderSPCMap() {
 
   const svgEl = d3.select('#spc-map-svg')
     .attr('viewBox', `0 0 ${W} ${H}`)
-    .attr('width', W)
-    .attr('height', H)
+    .attr('width', '100%')
+    .attr('height', 'auto')
     .style('display','block');
 
   svgEl.selectAll('*').remove();
@@ -1461,19 +1461,19 @@ async function renderSPCMap() {
   // Small NE states: use ABSOLUTE label positions (as % of W/H) to
   // guarantee no line crossings. Values tuned to AlbersUSA projection.
   // { lx: fraction of W, ly: fraction of H }
-  // User-confirmed positions (stored as fractions of W/H for any viewport)
+  // User-confirmed positions in fixed 960×620 SVG coordinate space
   const ABS_LABELS = {
-    'NH': { ax:0.8887, ay:0.2559, lx:0.8758, ly:0.1028 },
-    'VT': { ax:0.8712, ay:0.2496, lx:0.8152, ly:0.1261 },
-    'MA': { ax:0.892, ay:0.3008, lx:0.9697, ly:0.2296 },
-    'RI': { ax:0.9015, ay:0.3211, lx:0.9504, ly:0.3291 },
-    'CT': { ax:0.8831, ay:0.3311, lx:0.9537, ly:0.3923 },
-    'NJ': { ax:0.8647, ay:0.396, lx:0.9266, ly:0.4339 },
-    'DE': { ax:0.8539, ay:0.4359, lx:0.9353, ly:0.4905 },
-    'MD': { ax:0.8377, ay:0.4359, lx:0.9299, ly:0.5488 },
-    'DC': { ax:0.8268, ay:0.4443, lx:0.9201, ly:0.597 },
+    'NH': { ax:853.2, ay:158.7, lx:840.7, ly:63.8 },
+    'VT': { ax:836.4, ay:154.7, lx:782.5, ly:78.2 },
+    'MA': { ax:856.3, ay:186.5, lx:930.9, ly:142.4 },
+    'RI': { ax:865.5, ay:199.1, lx:912.4, ly:204.1 },
+    'CT': { ax:847.8, ay:205.3, lx:915.5, ly:243.3 },
+    'NJ': { ax:830.1, ay:245.5, lx:889.6, ly:269.0 },
+    'DE': { ax:819.7, ay:270.3, lx:897.9, ly:304.1 },
+    'MD': { ax:804.2, ay:270.3, lx:892.7, ly:340.2 },
+    'DC': { ax:793.8, ay:275.4, lx:883.3, ly:370.1 },
   };
-  const absScaleX = W, absScaleY = H; // positions already in fractions
+  const absScaleX = 1, absScaleY = 1; // fixed coordinate space — no scaling needed // positions already in fractions
   const CALLOUTS = {};
 
   // Manual centroid corrections for oddly shaped states
