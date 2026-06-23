@@ -364,7 +364,11 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
         <div style="display:flex;align-items:center;background:var(--bg3);border:1px solid var(--bdr);border-radius:6px;overflow:hidden;flex-shrink:0">
           <button id="map-toggle-spc" onclick="setMapMode('spc')"
             style="font-size:11px;padding:5px 12px;border:none;background:var(--grn);color:#000;cursor:pointer;font-family:var(--mono);font-weight:600;transition:all .2s">
-            Tornado Reports
+            SPC Reports
+          </button>
+          <button id="map-toggle-dat" onclick="setMapMode('dat')"
+            style="font-size:11px;padding:5px 12px;border:none;background:transparent;color:var(--t3);cursor:pointer;font-family:var(--mono);transition:all .2s">
+            DAT Confirmed
           </button>
           <button id="map-toggle-warn" onclick="setMapMode('warn')"
             style="font-size:11px;padding:5px 12px;border:none;background:transparent;color:var(--t3);cursor:pointer;font-family:var(--mono);transition:all .2s">
@@ -1341,8 +1345,10 @@ let _mapMode = 'spc'; // 'spc' or 'warn'
 function setMapMode(mode) {
   _mapMode = mode;
   const spcBtn  = document.getElementById('map-toggle-spc');
+  const datBtn  = document.getElementById('map-toggle-dat');
   const warnBtn = document.getElementById('map-toggle-warn');
   if (spcBtn)  { spcBtn.style.background  = mode==='spc'  ? 'var(--grn)' : 'transparent'; spcBtn.style.color  = mode==='spc'  ? '#000' : 'var(--t3)'; spcBtn.style.fontWeight  = mode==='spc'  ? '600' : '400'; }
+  if (datBtn)  { datBtn.style.background  = mode==='dat'  ? 'var(--red)' : 'transparent'; datBtn.style.color  = mode==='dat'  ? '#fff' : 'var(--t3)'; datBtn.style.fontWeight  = mode==='dat'  ? '600' : '400'; }
   if (warnBtn) { warnBtn.style.background = mode==='warn' ? 'var(--amb)' : 'transparent'; warnBtn.style.color = mode==='warn' ? '#000' : 'var(--t3)'; warnBtn.style.fontWeight = mode==='warn' ? '600' : '400'; }
   // Re-render map with new data
   const section = document.getElementById('spc-map-section');
@@ -1351,6 +1357,8 @@ function setMapMode(mode) {
   const sub = document.querySelector('#spc-map-section h2 + div');
   if (sub) sub.firstChild.textContent = mode === 'warn'
     ? 'IEM VTEC tornado warnings · hover a state for details'
+    : mode === 'dat'
+    ? 'NWS DAT confirmed surveys · hover a state for details'
     : 'SPC preliminary filtered reports · hover a state for details';
 }
 
@@ -1364,10 +1372,13 @@ async function renderSPCMap() {
 
   const _rawByState = _mapMode === 'warn'
     ? (vtecData?.warn?.byState || {})
+    : _mapMode === 'dat'
+    ? stMap
     : (spcData?.byState || {});
   // Apply OUN override for Oklahoma in SPC mode (same as state table)
   const byState = {..._rawByState};
   if (_mapMode === 'spc' && okData?.total > 0) byState['OK'] = okData.total;
+  if (_mapMode === 'dat' && okData?.total > 0) byState['OK'] = okData.total;
   const MAP_RANGES = _mapMode === 'warn' ? WARN_RANGES : SPC_RANGES;
   if (!Object.keys(byState).length) return;
 
