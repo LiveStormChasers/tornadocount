@@ -358,6 +358,17 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:8px" id="map-legend"></div>
+        <!-- Map data toggle -->
+        <div style="display:flex;align-items:center;background:var(--bg3);border:1px solid var(--bdr);border-radius:6px;overflow:hidden;flex-shrink:0">
+          <button id="map-toggle-spc" onclick="setMapMode('spc')"
+            style="font-size:11px;padding:5px 12px;border:none;background:var(--grn);color:#000;cursor:pointer;font-family:var(--mono);font-weight:600;transition:all .2s">
+            Tornado Reports
+          </button>
+          <button id="map-toggle-warn" onclick="setMapMode('warn')"
+            style="font-size:11px;padding:5px 12px;border:none;background:transparent;color:var(--t3);cursor:pointer;font-family:var(--mono);transition:all .2s">
+            Warnings
+          </button>
+        </div>
         <button id="mapchart-copy-btn" onclick="copyMapChartJSON()"
           style="font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--bdr);background:var(--bg3);color:var(--t2);cursor:pointer;font-family:var(--mono);letter-spacing:.04em;flex-shrink:0;transition:all .2s"
           title="Copy SPC filtered tornado reports by state for MapChart">
@@ -1262,7 +1273,10 @@ async function copyWarnMapChartJSON() {
 }
 
 async function copyMapChartJSON() {
-  const byState = spcData?.byState || {};
+  const byState  = _mapMode === 'warn'
+    ? (vtecData?.warn?.byState || {})
+    : (spcData?.byState || {});
+  const MAP_RANGES = _mapMode === 'warn' ? WARN_RANGES : SPC_RANGES;
   if (!Object.keys(byState).length) {
     alert('Load SPC data first by clicking Update.');
     return;
@@ -1293,7 +1307,7 @@ async function copyMapChartJSON() {
 }
 
 // ── SPC Tornado Map ──────────────────────────────────────────────────────
-const MAP_RANGES = [
+const SPC_RANGES = [
   { min:1,   max:20,  color:'#f5e6a3', label:'1–20'   },
   { min:21,  max:40,  color:'#f5a623', label:'21–40'  },
   { min:41,  max:60,  color:'#e84040', label:'41–60'  },
@@ -1301,16 +1315,50 @@ const MAP_RANGES = [
   { min:81,  max:100, color:'#6b3fa0', label:'81–100' },
   { min:101, max:Infinity, color:'#d94fbd', label:'101+' },
 ];
+const WARN_RANGES = [
+  { min:200, max:Infinity, color:'#8b0000', label:'200+' },
+  { min:100, max:199,      color:'#cc0000', label:'100–199' },
+  { min:75,  max:99,       color:'#ff4500', label:'75–99' },
+  { min:50,  max:74,       color:'#ff8c00', label:'50–74' },
+  { min:40,  max:49,       color:'#ffa500', label:'40–49' },
+  { min:30,  max:39,       color:'#ffd700', label:'30–39' },
+  { min:25,  max:29,       color:'#adff2f', label:'25–29' },
+  { min:20,  max:24,       color:'#7fff00', label:'20–24' },
+  { min:15,  max:19,       color:'#32cd32', label:'15–19' },
+  { min:10,  max:14,       color:'#00ced1', label:'10–14' },
+  { min:5,   max:9,        color:'#00bfff', label:'5–9'  },
+  { min:3,   max:4,        color:'#1e90ff', label:'3–4'  },
+  { min:2,   max:2,        color:'#0000ff', label:'2'    },
+  { min:1,   max:1,        color:'#00008b', label:'1'    },
+];
 const MAP_ZERO_COLOR  = '#d1dbdd';
 const MAP_NO_DATA     = '#1e2330';
 
 function getMapColor(n) {
   if (!n || n === 0) return MAP_ZERO_COLOR;
-  const r = MAP_RANGES.find(r => n >= r.min && n <= r.max);
+  const ranges = _mapMode === 'warn' ? WARN_RANGES : SPC_RANGES;
+  const r = ranges.find(r => n >= r.min && n <= r.max);
   return r ? r.color : MAP_ZERO_COLOR;
 }
 
 let _mapLoaded = false;
+let _mapMode = 'spc'; // 'spc' or 'warn'
+
+function setMapMode(mode) {
+  _mapMode = mode;
+  const spcBtn  = document.getElementById('map-toggle-spc');
+  const warnBtn = document.getElementById('map-toggle-warn');
+  if (spcBtn)  { spcBtn.style.background  = mode==='spc'  ? 'var(--grn)' : 'transparent'; spcBtn.style.color  = mode==='spc'  ? '#000' : 'var(--t3)'; spcBtn.style.fontWeight  = mode==='spc'  ? '600' : '400'; }
+  if (warnBtn) { warnBtn.style.background = mode==='warn' ? 'var(--amb)' : 'transparent'; warnBtn.style.color = mode==='warn' ? '#000' : 'var(--t3)'; warnBtn.style.fontWeight = mode==='warn' ? '600' : '400'; }
+  // Re-render map with new data
+  const section = document.getElementById('spc-map-section');
+  if (section && section.style.display !== 'none') renderSPCMap();
+  // Update subtitle
+  const sub = document.querySelector('#spc-map-section h2 + div');
+  if (sub) sub.firstChild.textContent = mode === 'warn'
+    ? 'IEM VTEC tornado warnings · hover a state for details'
+    : 'SPC preliminary filtered reports · hover a state for details';
+}
 
 async function renderSPCMap() {
   const section = document.getElementById('spc-map-section');
@@ -1320,7 +1368,10 @@ async function renderSPCMap() {
   const tooltip = document.getElementById('spc-map-tooltip');
   if (!section) return;
 
-  const byState = spcData?.byState || {};
+  const byState  = _mapMode === 'warn'
+    ? (vtecData?.warn?.byState || {})
+    : (spcData?.byState || {});
+  const MAP_RANGES = _mapMode === 'warn' ? WARN_RANGES : SPC_RANGES;
   if (!Object.keys(byState).length) return;
 
   section.style.display = 'block';
@@ -1404,32 +1455,36 @@ async function renderSPCMap() {
   }
   await new Promise(r => setTimeout(r, 400)); // let font load
 
-  const fontSize = Math.max(16, W / 48);
+  const fontSize = Math.max(16, W / 48) + 3;
   const FONT = "'Anton', 'Arial Black', sans-serif";
 
   // Small NE states: use ABSOLUTE label positions (as % of W/H) to
   // guarantee no line crossings. Values tuned to AlbersUSA projection.
   // { lx: fraction of W, ly: fraction of H }
-  // Right-column labels: x=0.97*W, y positions in strict north-south order
-  // so lines NEVER cross. DC/WV/VA also included to prevent fallback crossings.
+  // User-confirmed positions (px at W=924, H=601 viewport)
+  // ax/ay = anchor dot on state, lx/ly = label position
   const ABS_LABELS = {
-    'VT': { lx:.78, ly:.18 },
-    'NH': { lx:.84, ly:.16 },
-    'MA': { lx:.97, ly:.23 },
-    'RI': { lx:.97, ly:.29 },
-    'CT': { lx:.97, ly:.35 },
-    'NJ': { lx:.97, ly:.41 },
-    'DE': { lx:.97, ly:.47 },
-    'MD': { lx:.97, ly:.53 },
-    'DC': { lx:.97, ly:.58 },
+    'VT': { ax:805, ay:150, lx:753, ly: 76 },
+    'NH': { ax:821, ay:154, lx:809, ly: 62 },
+    'MA': { ax:824, ay:181, lx:896, ly:138 },
+    'RI': { ax:833, ay:193, lx:878, ly:198 },
+    'CT': { ax:816, ay:199, lx:881, ly:236 },
+    'NJ': { ax:799, ay:238, lx:856, ly:261 },
+    'DE': { ax:789, ay:262, lx:864, ly:295 },
+    'MD': { ax:774, ay:262, lx:859, ly:330 },
+    'DC': { ax:764, ay:267, lx:850, ly:359 },
   };
-  const CALLOUTS = {}; // all small states handled via ABS_LABELS above
+  // Scale factor so positions work at any viewport size
+  const absScaleX = W / 924, absScaleY = H / 601;
+  const CALLOUTS = {};
 
   // Manual centroid corrections for oddly shaped states
   const CENTROID_FIX = {
-    'LA': [-55, -10], // push west into main body of LA, away from MS border
-    'MI': [0,  12],  // lower peninsula centroid is better slightly south
-    'FL': [0,   8],
+    'LA': [-12, -10], // user-confirmed
+    'MI': [13,  23],  // user-confirmed
+    'FL': [26,  22],  // user-confirmed
+    'CA': [-6,   9],  // user-confirmed
+    'ID': [-2,  14],  // user-confirmed
   };
 
   const addLabel = (x, y, text, anchor='middle') => {
@@ -1439,7 +1494,7 @@ async function renderSPCMap() {
       .attr('text-anchor', anchor)
       .attr('font-size', fontSize).attr('font-family', FONT)
       .attr('fill', 'none')
-      .attr('stroke', '#000').attr('stroke-width', fontSize * 0.45)
+      .attr('stroke', '#000').attr('stroke-width', fontSize * 0.22)
       .attr('stroke-linejoin', 'round').attr('stroke-linecap', 'round')
       .text(text);
     g.append('text')
@@ -1468,18 +1523,89 @@ async function renderSPCMap() {
     const isSmall = sw < fontSize * 2.2 || sh < fontSize * 1.2;
 
     if (ABS_LABELS[abbr]) {
-      // Absolute-positioned label — clean, no-crossing approach for NE cluster
-      const lx = ABS_LABELS[abbr].lx * W;
-      const ly = ABS_LABELS[abbr].ly * H;
+      // Use saved position if user has dragged, otherwise use default
+      // Load persisted callout positions from localStorage
+  if (!window._calloutPos) {
+    try {
+      const saved = localStorage.getItem('tornadomap_callouts');
+      window._calloutPos = saved ? JSON.parse(saved) : {};
+    } catch(e) { window._calloutPos = {}; }
+  }
+      const saved  = window._calloutPos[abbr];
+      const preset = ABS_LABELS[abbr];
+      const ax = saved?.ax ?? preset.ax * absScaleX;
+      const ay = saved?.ay ?? preset.ay * absScaleY;
+      let   lx = saved?.x  ?? preset.lx * absScaleX;
+      let   ly = saved?.y  ?? preset.ly * absScaleY;
+
+      // Draggable anchor dot
       svgEl.append('circle')
-        .attr('cx', c[0]).attr('cy', c[1]).attr('r', 2.5)
-        .attr('fill', '#fff').attr('stroke', '#000').attr('stroke-width', 1.2)
-        .attr('pointer-events', 'none');
-      svgEl.append('line')
-        .attr('x1', c[0]).attr('y1', c[1]).attr('x2', lx).attr('y2', ly)
-        .attr('stroke', '#fff').attr('stroke-width', 1.2)
-        .attr('pointer-events', 'none');
-      addLabel(lx, ly, label);
+        .attr('id', `anchor-${abbr}`)
+        .attr('cx', ax).attr('cy', ay).attr('r', 4)
+        .attr('fill', '#fff').attr('stroke', '#000').attr('stroke-width', 1.5)
+        .attr('cursor', 'move');
+
+      // Draggable callout group (line + labels)
+      const calloutG = svgEl.append('g')
+        .attr('id', `callout-${abbr}`)
+        .attr('cursor', 'grab')
+        .attr('data-abbr', abbr)
+        .attr('data-ax', ax).attr('data-ay', ay);
+
+      // Line with black outline
+      calloutG.append('line')
+        .attr('class', 'callout-line-outline')
+        .attr('x1', ax).attr('y1', ay).attr('x2', lx).attr('y2', ly)
+        .attr('stroke', '#000').attr('stroke-width', 3.2).attr('stroke-linecap', 'round');
+      calloutG.append('line')
+        .attr('class', 'callout-line')
+        .attr('x1', ax).attr('y1', ay).attr('x2', lx).attr('y2', ly)
+        .attr('stroke', '#fff').attr('stroke-width', 1.2).attr('stroke-linecap', 'round');
+
+      // Outline text
+      calloutG.append('text')
+        .attr('class', 'callout-outline')
+        .attr('x', lx).attr('y', ly)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', fontSize).attr('font-family', FONT)
+        .attr('fill', 'none').attr('stroke', '#000')
+        .attr('stroke-width', fontSize * 0.22).attr('stroke-linejoin', 'round')
+        .text(label);
+
+      // Fill text
+      calloutG.append('text')
+        .attr('class', 'callout-fill')
+        .attr('x', lx).attr('y', ly)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', fontSize).attr('font-family', FONT)
+        .attr('fill', '#fff')
+        .text(label);
+
+      // D3 drag behavior
+      calloutG.call(d3.drag()
+        .on('start', function() { d3.select(this).attr('cursor','grabbing'); })
+        .on('drag', function(event) {
+          const g = d3.select(this);
+          const nx = event.x, ny = event.y;
+          g.select('.callout-line-outline').attr('x2', nx).attr('y2', ny);
+          g.select('.callout-line').attr('x2', nx).attr('y2', ny);
+          g.select('.callout-outline').attr('x', nx).attr('y', ny);
+          g.select('.callout-fill').attr('x', nx).attr('y', ny);
+        })
+        .on('end', function(event) {
+          d3.select(this).attr('cursor','grab');
+          const ab = d3.select(this).attr('data-abbr');
+          // Load persisted callout positions from localStorage
+  if (!window._calloutPos) {
+    try {
+      const saved = localStorage.getItem('tornadomap_callouts');
+      window._calloutPos = saved ? JSON.parse(saved) : {};
+    } catch(e) { window._calloutPos = {}; }
+  }
+          window._calloutPos[ab] = { x: event.x, y: event.y };
+          try { localStorage.setItem('tornadomap_callouts', JSON.stringify(window._calloutPos)); } catch(e) {}
+        })
+      );
     } else if (CALLOUTS[abbr] || isSmall) {
       const off = CALLOUTS[abbr] || [48, 0];
       const lx = c[0] + off[0];
