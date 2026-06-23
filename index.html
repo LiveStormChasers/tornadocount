@@ -1318,12 +1318,12 @@ const SPC_RANGES = [
   { min:101, max:Infinity, color:'#d94fbd', label:'101+' },
 ];
 const EF_HIST_RANGES = [
-  { min:5, max:5, color:'#8b0000', label:'EF5' },
-  { min:4, max:4, color:'#e31a1c', label:'EF4' },
-  { min:3, max:3, color:'#ff7f00', label:'EF3' },
-  { min:2, max:2, color:'#ffd700', label:'EF2' },
-  { min:1, max:1, color:'#7fff00', label:'EF1' },
-  { min:0, max:0, color:'#00bfff', label:'EF0' },
+  { min:5, max:5, color:'#8b0000', label:'EF-5' },
+  { min:4, max:4, color:'#e31a1c', label:'EF-4' },
+  { min:3, max:3, color:'#ff7f00', label:'EF-3' },
+  { min:2, max:2, color:'#ffd700', label:'EF-2' },
+  { min:1, max:1, color:'#7fff00', label:'EF-1' },
+  { min:0, max:0, color:'#00bfff', label:'EF-0' },
 ];
 const WARN_RANGES = [
   { min:200, max:Infinity, color:'#8b0000', label:'200+' },
@@ -1386,8 +1386,13 @@ async function loadEFHistData() {
     if (maxEF[st] === undefined || mag > maxEF[st]) maxEF[st] = mag;
   });
 
+  // Manual overrides for known SPC database errors
+  // HI Feb 11 2009 Kapolei: NWS Honolulu rated EF1 but SPC CSV shows EF0
+  // Source: https://en.wikipedia.org/wiki/List_of_Hawaii_tornadoes
+  if (!maxEF['HI'] || maxEF['HI'] < 1) maxEF['HI'] = 1;
+
   window._efHistByState = maxEF;
-  console.log('[EF Hist] Loaded', Object.keys(maxEF).length, 'states (1950–2026)');
+  console.log('[EF Hist] Loaded', Object.keys(maxEF).length, 'states (2007–2026)');
 }
 
 async function setMapMode(mode) {
@@ -1581,7 +1586,7 @@ async function renderSPCMap() {
   states.forEach(d => {
     const abbr   = FIPS[String(d.id).padStart(2,'0')];
     const count  = byState[abbr] || 0;
-    const label  = _mapMode === 'efhist' ? `EF${count}` : String(count);
+    const label  = _mapMode === 'efhist' ? `EF-${count}` : String(count);
     let   c      = path.centroid(d);
     if (!c || isNaN(c[0])) return;
 
