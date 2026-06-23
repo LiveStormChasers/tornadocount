@@ -1362,9 +1362,12 @@ async function renderSPCMap() {
   const tooltip = document.getElementById('spc-map-tooltip');
   if (!section) return;
 
-  const byState  = _mapMode === 'warn'
+  const _rawByState = _mapMode === 'warn'
     ? (vtecData?.warn?.byState || {})
     : (spcData?.byState || {});
+  // Apply OUN override for Oklahoma in SPC mode (same as state table)
+  const byState = {..._rawByState};
+  if (_mapMode === 'spc' && okData?.total > 0) byState['OK'] = okData.total;
   const MAP_RANGES = _mapMode === 'warn' ? WARN_RANGES : SPC_RANGES;
   if (!Object.keys(byState).length) return;
 
