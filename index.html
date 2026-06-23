@@ -1383,7 +1383,7 @@ async function loadEFHistData() {
   console.log('[EF Hist] Loaded', Object.keys(maxEF).length, 'states (1950–2026)');
 }
 
-function setMapMode(mode) {
+async function setMapMode(mode) {
   _mapMode = mode;
   const spcBtn  = document.getElementById('map-toggle-spc');
   const datBtn  = document.getElementById('map-toggle-dat');
@@ -1395,7 +1395,7 @@ function setMapMode(mode) {
   if (efBtn)   { efBtn.style.background   = mode==='efhist' ? '#6b3fa0'    : 'transparent'; efBtn.style.color   = mode==='efhist' ? '#fff' : 'var(--t3)'; efBtn.style.fontWeight  = mode==='efhist' ? '600' : '400'; }
   // Re-render map with new data
   const section = document.getElementById('spc-map-section');
-  if (section && section.style.display !== 'none') renderSPCMap();
+  if (section && section.style.display !== 'none') await renderSPCMap();
   // Update subtitle
   const sub = document.querySelector('#spc-map-section h2 + div');
   if (sub) sub.firstChild.textContent = mode === 'warn'
