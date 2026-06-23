@@ -374,6 +374,10 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
             style="font-size:11px;padding:5px 12px;border:none;background:transparent;color:var(--t3);cursor:pointer;font-family:var(--mono);transition:all .2s">
             Warnings
           </button>
+          <button id="map-toggle-efhist" onclick="setMapMode('efhist')"
+            style="font-size:11px;padding:5px 12px;border:none;background:transparent;color:var(--t3);cursor:pointer;font-family:var(--mono);transition:all .2s">
+            Max EF (Historical)
+          </button>
         </div>
         <!-- MapChart copy dropdown -->
         <div style="position:relative;flex-shrink:0" id="mc-dropdown-wrap">
@@ -1313,6 +1317,14 @@ const SPC_RANGES = [
   { min:81,  max:100, color:'#6b3fa0', label:'81–100' },
   { min:101, max:Infinity, color:'#d94fbd', label:'101+' },
 ];
+const EF_HIST_RANGES = [
+  { min:5, max:5, color:'#8b0000', label:'EF5' },
+  { min:4, max:4, color:'#e31a1c', label:'EF4' },
+  { min:3, max:3, color:'#ff7f00', label:'EF3' },
+  { min:2, max:2, color:'#ffd700', label:'EF2' },
+  { min:1, max:1, color:'#7fff00', label:'EF1' },
+  { min:0, max:0, color:'#00bfff', label:'EF0' },
+];
 const WARN_RANGES = [
   { min:200, max:Infinity, color:'#8b0000', label:'200+' },
   { min:100, max:199,      color:'#cc0000', label:'100–199' },
@@ -1342,14 +1354,35 @@ function getMapColor(n) {
 let _mapLoaded = false;
 let _mapMode = 'spc'; // 'spc' or 'warn'
 
+async function loadEFHistData() {
+  if (window._efHistByState) return; // already loaded
+  const url = 'https://www.spc.noaa.gov/wcm/data/1950-2023_torn.csv';
+  const res = await fetch(url);
+  if (!res.ok) { console.error('EF hist fetch failed'); return; }
+  const txt = await res.text();
+  const lines = txt.trim().split('\n').slice(1); // skip header
+  const maxEF = {};
+  lines.forEach(l => {
+    const c = l.split(',');
+    const st  = (c[7] || '').trim().toUpperCase();   // state abbrev
+    const mag = parseInt(c[10], 10);                  // EF/F rating
+    if (!st || isNaN(mag) || mag < 0) return;         // skip unknown (-9)
+    if (maxEF[st] === undefined || mag > maxEF[st]) maxEF[st] = mag;
+  });
+  window._efHistByState = maxEF;
+  console.log('[EF Hist] Loaded', Object.keys(maxEF).length, 'states');
+}
+
 function setMapMode(mode) {
   _mapMode = mode;
   const spcBtn  = document.getElementById('map-toggle-spc');
   const datBtn  = document.getElementById('map-toggle-dat');
   const warnBtn = document.getElementById('map-toggle-warn');
-  if (spcBtn)  { spcBtn.style.background  = mode==='spc'  ? 'var(--grn)' : 'transparent'; spcBtn.style.color  = mode==='spc'  ? '#000' : 'var(--t3)'; spcBtn.style.fontWeight  = mode==='spc'  ? '600' : '400'; }
-  if (datBtn)  { datBtn.style.background  = mode==='dat'  ? 'var(--red)' : 'transparent'; datBtn.style.color  = mode==='dat'  ? '#fff' : 'var(--t3)'; datBtn.style.fontWeight  = mode==='dat'  ? '600' : '400'; }
-  if (warnBtn) { warnBtn.style.background = mode==='warn' ? 'var(--amb)' : 'transparent'; warnBtn.style.color = mode==='warn' ? '#000' : 'var(--t3)'; warnBtn.style.fontWeight = mode==='warn' ? '600' : '400'; }
+  const efBtn   = document.getElementById('map-toggle-efhist');
+  if (spcBtn)  { spcBtn.style.background  = mode==='spc'    ? 'var(--grn)' : 'transparent'; spcBtn.style.color  = mode==='spc'    ? '#000' : 'var(--t3)'; spcBtn.style.fontWeight = mode==='spc'    ? '600' : '400'; }
+  if (datBtn)  { datBtn.style.background  = mode==='dat'    ? 'var(--red)' : 'transparent'; datBtn.style.color  = mode==='dat'    ? '#fff' : 'var(--t3)'; datBtn.style.fontWeight = mode==='dat'    ? '600' : '400'; }
+  if (warnBtn) { warnBtn.style.background = mode==='warn'   ? 'var(--amb)' : 'transparent'; warnBtn.style.color = mode==='warn'   ? '#000' : 'var(--t3)'; warnBtn.style.fontWeight= mode==='warn'   ? '600' : '400'; }
+  if (efBtn)   { efBtn.style.background   = mode==='efhist' ? '#6b3fa0'    : 'transparent'; efBtn.style.color   = mode==='efhist' ? '#fff' : 'var(--t3)'; efBtn.style.fontWeight  = mode==='efhist' ? '600' : '400'; }
   // Re-render map with new data
   const section = document.getElementById('spc-map-section');
   if (section && section.style.display !== 'none') renderSPCMap();
@@ -1359,6 +1392,8 @@ function setMapMode(mode) {
     ? 'IEM VTEC tornado warnings · hover a state for details'
     : mode === 'dat'
     ? 'NWS DAT confirmed surveys · hover a state for details'
+    : mode === 'efhist'
+    ? 'Max EF tornado ever recorded by state · SPC 1950–2023 · hover for details'
     : 'SPC preliminary filtered reports · hover a state for details';
 }
 
@@ -1374,15 +1409,24 @@ async function renderSPCMap() {
     ? (vtecData?.warn?.byState || {})
     : _mapMode === 'dat'
     ? stMap
+    : _mapMode === 'efhist'
+    ? (window._efHistByState || {})
     : (spcData?.byState || {});
-  // Apply OUN override for Oklahoma in SPC mode (same as state table)
   const byState = {..._rawByState};
   if (_mapMode === 'spc' && okData?.total > 0) byState['OK'] = okData.total;
   if (_mapMode === 'dat' && okData?.total > 0) byState['OK'] = okData.total;
-  const MAP_RANGES = _mapMode === 'warn' ? WARN_RANGES : SPC_RANGES;
+  const MAP_RANGES = _mapMode === 'warn' ? WARN_RANGES
+    : _mapMode === 'efhist' ? EF_HIST_RANGES
+    : SPC_RANGES;
   if (!Object.keys(byState).length) return;
 
   section.style.display = 'block';
+
+  // Load historical EF data if needed
+  if (_mapMode === 'efhist' && !window._efHistByState) {
+    await loadEFHistData();
+    if (!window._efHistByState) return;
+  }
 
   // Always rebuild legend so it reflects current mode (SPC vs warnings)
   const legend = document.getElementById('map-legend');
@@ -1449,7 +1493,8 @@ async function renderSPCMap() {
       tooltip.style.display = 'block';
       tooltip.style.left    = (event.clientX - rect.left + 12) + 'px';
       tooltip.style.top     = (event.clientY - rect.top  - 10) + 'px';
-      tooltip.innerHTML     = `<strong>${name}</strong>: ${count} reports`;
+      const tipLabel = _mapMode === 'efhist' ? `Max EF: EF${count}` : `${count} ${_mapMode==='warn'?'warnings':'tornadoes'}`;
+      tooltip.innerHTML = `<strong>${name}</strong>: ${tipLabel}`;
     })
     .on('mouseleave', () => { tooltip.style.display = 'none'; });
 
