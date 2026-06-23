@@ -1368,9 +1368,11 @@ async function loadEFHistData() {
   const lines = txt.trim().split('\n').slice(1); // skip header
   const maxEF = {};
   lines.forEach(l => {
-    const c = l.split(',');
-    const st  = (c[7] || '').trim().toUpperCase();   // state abbrev
-    const mag = parseInt(c[10], 10);                  // EF/F rating
+    const c   = l.split(',');
+    const yr  = parseInt(c[1], 10);                   // year
+    const st  = (c[7] || '').trim().toUpperCase();    // state abbrev
+    const mag = parseInt(c[10], 10);                  // EF rating
+    if (yr < 2007) return;                            // EF scale started Feb 2007
     if (!st || isNaN(mag) || mag < 0) return;         // skip unknown (-9)
     if (maxEF[st] === undefined || mag > maxEF[st]) maxEF[st] = mag;
   });
@@ -1411,7 +1413,7 @@ async function setMapMode(mode) {
     : mode === 'dat'
     ? 'NWS DAT confirmed surveys · hover a state for details'
     : mode === 'efhist'
-    ? 'Max EF tornado ever recorded by state · SPC 1950–2026 · hover for details'
+    ? 'Max EF rating ever recorded by state · SPC 2007–2026 · hover for details'
     : 'SPC preliminary filtered reports · hover a state for details';
 }
 
@@ -1513,7 +1515,7 @@ async function renderSPCMap() {
       tooltip.style.display = 'block';
       tooltip.style.left    = (event.clientX - rect.left + 12) + 'px';
       tooltip.style.top     = (event.clientY - rect.top  - 10) + 'px';
-      const tipLabel = _mapMode === 'efhist' ? `Max EF: EF${count}` : `${count} ${_mapMode==='warn'?'warnings':'tornadoes'}`;
+      const tipLabel = _mapMode === 'efhist' ? `Max F/EF rating: ${count}` : `${count} ${_mapMode==='warn'?'warnings':'tornadoes'}`;
       tooltip.innerHTML = `<strong>${name}</strong>: ${tipLabel}`;
     })
     .on('mouseleave', () => { tooltip.style.display = 'none'; });
