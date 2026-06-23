@@ -1436,15 +1436,17 @@ async function renderSPCMap() {
   const MAP_RANGES = _mapMode === 'warn' ? WARN_RANGES
     : _mapMode === 'efhist' ? EF_HIST_RANGES
     : SPC_RANGES;
-  if (!Object.keys(byState).length) return;
-
-  section.style.display = 'block';
-
-  // Load historical EF data if needed
+  // Load historical EF data BEFORE checking byState (it starts empty)
   if (_mapMode === 'efhist' && !window._efHistByState) {
     await loadEFHistData();
     if (!window._efHistByState) return;
+    // Rebuild byState with now-loaded data
+    Object.assign(byState, window._efHistByState);
   }
+
+  if (!Object.keys(byState).length) return;
+
+  section.style.display = 'block';
 
   // Always rebuild legend so it reflects current mode (SPC vs warnings)
   const legend = document.getElementById('map-legend');
