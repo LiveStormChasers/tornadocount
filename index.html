@@ -398,7 +398,8 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
           </div>
         </div>
         <button id="map-export-btn" onclick="exportMapPNG()"
-          style="font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:var(--t1);cursor:pointer;font-family:var(--mono);letter-spacing:.04em;flex-shrink:0;transition:all .2s"
+          style="font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid rgba(59,143,232,.5);background:rgba(59,143,232,.15);color:var(--blu);cursor:pointer;font-family:var(--mono);font-weight:600;letter-spacing:.04em;flex-shrink:0;transition:all .2s"
+          onmouseover="this.style.background='rgba(59,143,232,.28)'" onmouseout="this.style.background='rgba(59,143,232,.15)'"
           title="Export map as high-resolution PNG">
           ⬇ Export PNG
         </button>
@@ -749,43 +750,22 @@ async function resolveStates(events) {
     if (!keyMap[key]) keyMap[key] = { lat: ev.startlat, lon: ev.startlon };
   });
 
-  const uncached = Object.entries(keyMap).filter(([k]) => !coordCache[k]);
-  const total = uncached.length;
-  let done = 0;
+  // FCC API blocked by CORS — skip external lookup, use WFO primary instead
+  // (multi-WFO events fall back to first WFO's primary state)
 
-  for (let i = 0; i < uncached.length; i += 8) {
-    const batch = uncached.slice(i, i + 8);
-    await Promise.all(batch.map(async ([key, {lat, lon}]) => {
-      try {
-        const res = await fetch(`https://geo.fcc.gov/api/census/block/find?latitude=${lat}&longitude=${lon}&format=json`);
-        if (res.ok) {
-          const j = await res.json();
-          coordCache[key] = j?.State?.code || null;
-        }
-      } catch(e) { coordCache[key] = null; }
-      done++;
-    }));
-    if (i + 8 < uncached.length) {
-      setStatus('loading', `Resolving states… ${done} of ${total}`);
-      await new Promise(r => setTimeout(r, 100));
-    }
-  }
-
-  // Assign states for multi-state / no-WFO events with tiebreaker logic
+  // Assign states for multi-state / no-WFO events — use WFO primary state
   events.forEach(ev => {
     if (!needsFCC(ev)) return; // already assigned above
     const wfo = ev.wfo?.toUpperCase()?.trim();
-    const key = `${ev.startlat?.toFixed(2)},${ev.startlon?.toFixed(2)}`;
-    const fccState = coordCache[key] || null;
 
-    if (fccState) {
-      // If WFO is multi-state, verify FCC result is in WFO territory
+    if (false) {
+      // (FCC lookup removed — CORS blocked)
       if (wfo && WFO_MULTI[wfo]) {
         const territory = WFO_MULTI[wfo];
-        if (territory.includes(fccState)) {
-          ev._state = fccState;            // FCC agrees with WFO territory ✓
+        if (territory.includes(null)) {
+          ev._state = null;
         } else {
-          ev._state = territory[0];        // FCC out-of-territory → use WFO primary
+          ev._state = territory[0];
         }
       } else {
         ev._state = fccState;              // no WFO → trust FCC fully
@@ -1390,9 +1370,9 @@ async function renderSPCMap() {
 
   section.style.display = 'block';
 
-  // Build legend
+  // Always rebuild legend so it reflects current mode (SPC vs warnings)
   const legend = document.getElementById('map-legend');
-  if (legend && !legend.children.length) {
+  if (legend) {
     legend.innerHTML = [...MAP_RANGES, {color: MAP_ZERO_COLOR, label:'0'}].map(r =>
       `<span style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--t3)">
         <span style="width:12px;height:12px;border-radius:2px;background:${r.color};flex-shrink:0"></span>${r.label}
