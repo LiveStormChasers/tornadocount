@@ -1581,7 +1581,7 @@ async function renderSPCMap() {
   states.forEach(d => {
     const abbr   = FIPS[String(d.id).padStart(2,'0')];
     const count  = byState[abbr] || 0;
-    const label  = String(count);
+    const label  = _mapMode === 'efhist' ? `EF${count}` : String(count);
     let   c      = path.centroid(d);
     if (!c || isNaN(c[0])) return;
 
