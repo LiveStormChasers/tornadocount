@@ -1461,21 +1461,19 @@ async function renderSPCMap() {
   // Small NE states: use ABSOLUTE label positions (as % of W/H) to
   // guarantee no line crossings. Values tuned to AlbersUSA projection.
   // { lx: fraction of W, ly: fraction of H }
-  // User-confirmed positions (px at W=924, H=601 viewport)
-  // ax/ay = anchor dot on state, lx/ly = label position
+  // User-confirmed positions (stored as fractions of W/H for any viewport)
   const ABS_LABELS = {
-    'VT': { ax:805, ay:150, lx:753, ly: 76 },
-    'NH': { ax:821, ay:154, lx:809, ly: 62 },
-    'MA': { ax:824, ay:181, lx:896, ly:138 },
-    'RI': { ax:833, ay:193, lx:878, ly:198 },
-    'CT': { ax:816, ay:199, lx:881, ly:236 },
-    'NJ': { ax:799, ay:238, lx:856, ly:261 },
-    'DE': { ax:789, ay:262, lx:864, ly:295 },
-    'MD': { ax:774, ay:262, lx:859, ly:330 },
-    'DC': { ax:764, ay:267, lx:850, ly:359 },
+    'NH': { ax:0.8887, ay:0.2559, lx:0.8758, ly:0.1028 },
+    'VT': { ax:0.8712, ay:0.2496, lx:0.8152, ly:0.1261 },
+    'MA': { ax:0.892, ay:0.3008, lx:0.9697, ly:0.2296 },
+    'RI': { ax:0.9015, ay:0.3211, lx:0.9504, ly:0.3291 },
+    'CT': { ax:0.8831, ay:0.3311, lx:0.9537, ly:0.3923 },
+    'NJ': { ax:0.8647, ay:0.396, lx:0.9266, ly:0.4339 },
+    'DE': { ax:0.8539, ay:0.4359, lx:0.9353, ly:0.4905 },
+    'MD': { ax:0.8377, ay:0.4359, lx:0.9299, ly:0.5488 },
+    'DC': { ax:0.8268, ay:0.4443, lx:0.9201, ly:0.597 },
   };
-  // Scale factor so positions work at any viewport size
-  const absScaleX = W / 924, absScaleY = H / 601;
+  const absScaleX = W, absScaleY = H; // positions already in fractions
   const CALLOUTS = {};
 
   // Manual centroid corrections for oddly shaped states
@@ -1524,13 +1522,11 @@ async function renderSPCMap() {
 
     if (ABS_LABELS[abbr]) {
       // Use saved position if user has dragged, otherwise use default
-      // Load persisted callout positions (shared across all modes — same geography)
-  if (!window._calloutPos) {
-    try {
-      const saved = localStorage.getItem('tornadomap_callouts');
-      window._calloutPos = saved ? JSON.parse(saved) : {};
-    } catch(e) { window._calloutPos = {}; }
-  }
+      // Load persisted callout positions — always reload to catch any new drags
+  try {
+    const _lsVal = localStorage.getItem('tornadomap_callouts');
+    window._calloutPos = _lsVal ? JSON.parse(_lsVal) : {};
+  } catch(e) { window._calloutPos = {}; }
       const saved  = window._calloutPos[abbr];
       const preset = ABS_LABELS[abbr];
       const ax = saved?.ax ?? preset.ax * absScaleX;
