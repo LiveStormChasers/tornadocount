@@ -1498,6 +1498,46 @@ async function renderSPCMap() {
     ).join('');
   }
 
+  // ── Geo-correct state assignments now that D3+TopoJSON are available ────
+  if (!window._geoStateCorrected && typeof d3 !== 'undefined' && typeof topojson !== 'undefined') {
+    try {
+      const _usData = await fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json').then(r=>r.json());
+      const _FIPS = {"01":"AL","02":"AK","04":"AZ","05":"AR","06":"CA","08":"CO","09":"CT","10":"DE","11":"DC","12":"FL","13":"GA","15":"HI","16":"ID","17":"IL","18":"IN","19":"IA","20":"KS","21":"KY","22":"LA","23":"ME","24":"MD","25":"MA","26":"MI","27":"MN","28":"MS","29":"MO","30":"MT","31":"NE","32":"NV","33":"NH","34":"NJ","35":"NM","36":"NY","37":"NC","38":"ND","39":"OH","40":"OK","41":"OR","42":"PA","44":"RI","45":"SC","46":"SD","47":"TN","48":"TX","49":"UT","50":"VT","51":"VA","53":"WA","54":"WV","55":"WI","56":"WY"};
+      const _stFeats = topojson.feature(_usData, _usData.objects.states).features
+        .map(f=>({abbr:_FIPS[String(f.id).padStart(2,'0')],feature:f})).filter(f=>f.abbr);
+      const _findState = (lat,lon) => {
+        if (!lat||!lon) return null;
+        for(const {abbr,feature} of _stFeats) {
+          if(d3.geoContains(feature,[lon,lat])) return abbr;
+        }
+        return null;
+      };
+      let corrected = 0;
+      // Only correct multi-WFO events (where WFO primary might be wrong state)
+      datEvs.forEach(ev => {
+        const wfo = ev.wfo?.toUpperCase()?.trim();
+        if (!wfo || !WFO_MULTI[wfo]) return; // single-state WFO, skip
+        const geoState = _findState(ev.startlat, ev.startlon);
+        if (geoState && geoState !== ev._state) {
+          ev._state = geoState;
+          corrected++;
+        }
+      });
+      // Rebuild stMap with corrected assignments
+      if (corrected > 0) {
+        Object.keys(stMap).forEach(k => delete stMap[k]);
+        datEvs.forEach(ev => {
+          const st = ev._state;
+          if (st) stMap[st] = (stMap[st]||0) + 1;
+        });
+        console.log(`[GeoCorrect] Fixed ${corrected} events. IN=${stMap['IN']}, IL=${stMap['IL']}, MI=${stMap['MI']}`);
+        // Re-render map if in DAT mode
+        if (_mapMode === 'dat') renderSPCMap();
+      }
+      window._geoStateCorrected = true;
+    } catch(e) { console.warn('[GeoCorrect] Failed:', e.message); }
+  }
+
   // Lazy-load D3 + TopoJSON + US map data
   if (!_mapLoaded) {
     loading.style.display = 'block';
