@@ -1524,7 +1524,7 @@ async function renderSPCMap() {
 
     if (ABS_LABELS[abbr]) {
       // Use saved position if user has dragged, otherwise use default
-      // Load persisted callout positions from localStorage
+      // Load persisted callout positions (shared across all modes — same geography)
   if (!window._calloutPos) {
     try {
       const saved = localStorage.getItem('tornadomap_callouts');
@@ -1595,13 +1595,7 @@ async function renderSPCMap() {
         .on('end', function(event) {
           d3.select(this).attr('cursor','grab');
           const ab = d3.select(this).attr('data-abbr');
-          // Load persisted callout positions from localStorage
-  if (!window._calloutPos) {
-    try {
-      const saved = localStorage.getItem('tornadomap_callouts');
-      window._calloutPos = saved ? JSON.parse(saved) : {};
-    } catch(e) { window._calloutPos = {}; }
-  }
+          if (!window._calloutPos) window._calloutPos = {};
           window._calloutPos[ab] = { x: event.x, y: event.y };
           try { localStorage.setItem('tornadomap_callouts', JSON.stringify(window._calloutPos)); } catch(e) {}
         })
