@@ -1356,7 +1356,7 @@ let _mapMode = 'spc'; // 'spc' or 'warn'
 
 async function loadEFHistData() {
   if (window._efHistByState) return; // already loaded
-  const url = 'https://www.spc.noaa.gov/wcm/data/1950-2023_torn.csv';
+  const url = 'https://www.spc.noaa.gov/wcm/data/1950-2025_actual_tornadoes.csv';
   const res = await fetch(url);
   if (!res.ok) { console.error('EF hist fetch failed'); return; }
   const txt = await res.text();
@@ -1369,8 +1369,18 @@ async function loadEFHistData() {
     if (!st || isNaN(mag) || mag < 0) return;         // skip unknown (-9)
     if (maxEF[st] === undefined || mag > maxEF[st]) maxEF[st] = mag;
   });
+  // Merge 2026 DAT confirmed tornadoes (already loaded in datEvs)
+  const EF_ORDER = {EF0:0,EF1:1,EF2:2,EF3:3,EF4:4,EF5:5};
+  (datEvs || []).forEach(ev => {
+    const st    = ev._state;
+    const scale = (ev.efscale || '').toUpperCase().replace('EF','');
+    const mag   = parseInt(scale, 10);
+    if (!st || isNaN(mag) || mag < 0) return;
+    if (maxEF[st] === undefined || mag > maxEF[st]) maxEF[st] = mag;
+  });
+
   window._efHistByState = maxEF;
-  console.log('[EF Hist] Loaded', Object.keys(maxEF).length, 'states');
+  console.log('[EF Hist] Loaded', Object.keys(maxEF).length, 'states (1950–2026)');
 }
 
 function setMapMode(mode) {
@@ -1393,7 +1403,7 @@ function setMapMode(mode) {
     : mode === 'dat'
     ? 'NWS DAT confirmed surveys · hover a state for details'
     : mode === 'efhist'
-    ? 'Max EF tornado ever recorded by state · SPC 1950–2023 · hover for details'
+    ? 'Max EF tornado ever recorded by state · SPC 1950–2026 · hover for details'
     : 'SPC preliminary filtered reports · hover a state for details';
 }
 
