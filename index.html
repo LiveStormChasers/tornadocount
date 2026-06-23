@@ -1345,8 +1345,13 @@ const MAP_ZERO_COLOR  = '#d1dbdd';
 const MAP_NO_DATA     = '#1e2330';
 
 function getMapColor(n) {
+  if (n === undefined || n === null || n < 0) return MAP_ZERO_COLOR;
+  const ranges = _mapMode === 'warn'   ? WARN_RANGES
+               : _mapMode === 'efhist' ? EF_HIST_RANGES
+               : SPC_RANGES;
+  // For efhist, n is the EF rating (0-5) and 0 is valid
+  if (_mapMode === 'efhist' && n === 0) return EF_HIST_RANGES.find(r => r.min === 0)?.color || MAP_ZERO_COLOR;
   if (!n || n === 0) return MAP_ZERO_COLOR;
-  const ranges = _mapMode === 'warn' ? WARN_RANGES : SPC_RANGES;
   const r = ranges.find(r => n >= r.min && n <= r.max);
   return r ? r.color : MAP_ZERO_COLOR;
 }
@@ -1393,9 +1398,12 @@ async function setMapMode(mode) {
   if (datBtn)  { datBtn.style.background  = mode==='dat'    ? 'var(--red)' : 'transparent'; datBtn.style.color  = mode==='dat'    ? '#fff' : 'var(--t3)'; datBtn.style.fontWeight = mode==='dat'    ? '600' : '400'; }
   if (warnBtn) { warnBtn.style.background = mode==='warn'   ? 'var(--amb)' : 'transparent'; warnBtn.style.color = mode==='warn'   ? '#000' : 'var(--t3)'; warnBtn.style.fontWeight= mode==='warn'   ? '600' : '400'; }
   if (efBtn)   { efBtn.style.background   = mode==='efhist' ? '#6b3fa0'    : 'transparent'; efBtn.style.color   = mode==='efhist' ? '#fff' : 'var(--t3)'; efBtn.style.fontWeight  = mode==='efhist' ? '600' : '400'; }
-  // Re-render map with new data
+  // Re-render map with new data — make section visible first so renderSPCMap doesn't bail
   const section = document.getElementById('spc-map-section');
-  if (section && section.style.display !== 'none') await renderSPCMap();
+  if (section) {
+    if (section.style.display === 'none') section.style.display = 'block';
+    await renderSPCMap();
+  }
   // Update subtitle
   const sub = document.querySelector('#spc-map-section h2 + div');
   if (sub) sub.firstChild.textContent = mode === 'warn'
