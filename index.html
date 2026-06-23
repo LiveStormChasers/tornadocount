@@ -187,6 +187,8 @@ tbody tr:hover td{background:var(--bg3)}
 .vtab.v-blu  {border-color:rgba(59,143,232,.45);background:rgba(59,143,232,.1);color:var(--blu)}
 .vtab.v-grn  {border-color:rgba(48,209,88,.45);background:rgba(48,209,88,.1);color:var(--grn)}
 
+.mc-open { display:block !important }
+
 /* ── path miles bars ── */
 .pm-row{display:grid;grid-template-columns:28px 140px 1fr;align-items:center;gap:12px;padding:2px 0}
 .pm-rank{font-size:14px;font-weight:600;color:#ffffff;font-family:var(--mono);text-align:right;line-height:1}
@@ -369,20 +371,32 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
             Warnings
           </button>
         </div>
-        <button id="mapchart-copy-btn" onclick="copyMapChartJSON()"
-          style="font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--bdr);background:var(--bg3);color:var(--t2);cursor:pointer;font-family:var(--mono);letter-spacing:.04em;flex-shrink:0;transition:all .2s"
-          title="Copy SPC filtered tornado reports by state for MapChart">
-          📋 SPC Reports
-        </button>
-        <button id="mapchart-warn-copy-btn" onclick="copyWarnMapChartJSON()"
-          style="font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--bdr);background:var(--bg3);color:var(--amb);cursor:pointer;font-family:var(--mono);letter-spacing:.04em;flex-shrink:0;transition:all .2s"
-          title="Copy tornado warnings by state for MapChart">
-          📋 Warnings
-        </button>
-        <a href="https://www.mapchart.net/usa.html" target="_blank"
-          style="font-size:10px;color:var(--t3);text-decoration:none;white-space:nowrap">
-          → mapchart.net ↗
-        </a>
+        <!-- MapChart copy dropdown -->
+        <div style="position:relative;flex-shrink:0" id="mc-dropdown-wrap">
+          <button onclick="document.getElementById('mc-dropdown').classList.toggle('mc-open')"
+            style="font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--bdr);background:var(--bg3);color:var(--t2);cursor:pointer;font-family:var(--mono);letter-spacing:.04em;transition:all .2s;display:flex;align-items:center;gap:5px">
+            📋 Copy for MapChart <span style="font-size:9px;opacity:.7">▼</span>
+          </button>
+          <div id="mc-dropdown" style="display:none;position:absolute;top:calc(100% + 4px);right:0;background:var(--bg2);border:1px solid var(--bdr);border-radius:6px;overflow:hidden;z-index:100;min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,.4)">
+            <button onclick="copyMapChartJSON();document.getElementById('mc-dropdown').classList.remove('mc-open')"
+              style="width:100%;text-align:left;padding:8px 14px;border:none;background:transparent;color:var(--t2);cursor:pointer;font-family:var(--mono);font-size:11px;transition:background .15s"
+              onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">
+              📋 Tornado Reports
+            </button>
+            <div style="height:1px;background:var(--bdr);margin:0 8px"></div>
+            <button onclick="copyWarnMapChartJSON();document.getElementById('mc-dropdown').classList.remove('mc-open')"
+              style="width:100%;text-align:left;padding:8px 14px;border:none;background:transparent;color:var(--amb);cursor:pointer;font-family:var(--mono);font-size:11px;transition:background .15s"
+              onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">
+              📋 Warnings
+            </button>
+            <div style="height:1px;background:var(--bdr);margin:0 8px"></div>
+            <a href="https://www.mapchart.net/usa.html" target="_blank"
+              style="display:block;padding:8px 14px;color:var(--t3);font-family:var(--mono);font-size:11px;text-decoration:none;transition:background .15s"
+              onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">
+              → mapchart.net ↗
+            </a>
+          </div>
+        </div>
         <button id="map-export-btn" onclick="exportMapPNG()"
           style="font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:var(--t1);cursor:pointer;font-family:var(--mono);letter-spacing:.04em;flex-shrink:0;transition:all .2s"
           title="Export map as high-resolution PNG">
@@ -1986,6 +2000,11 @@ const ST_N = {
 };
 
 // Auto-fetch removed — click Update to load data
+
+// Close MapChart dropdown when clicking outside
+document.addEventListener('click', e => {
+  if (!document.getElementById('mc-dropdown-wrap')?.contains(e.target)) {
+    document.getElementById('mc-dropdown')?.classList.remove('mc-open');
+  }
+});
 </script>
-</body>
-</html>
