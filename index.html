@@ -1694,7 +1694,7 @@ async function renderSPCMap() {
   await new Promise(r => setTimeout(r, 400)); // let font load
 
   // EF-hist labels are 4 chars wide ("EF-5") vs 1-3 for other modes
-  const _baseFontSize = Math.max(18, W / 48) + 5; // +2px from original
+  const _baseFontSize = Math.max(20, W / 48) + 7; // +4px from original (user confirmed)
   const fontSize = _mapMode === 'efhist' ? Math.floor(_baseFontSize * 0.82) : _baseFontSize;
   const FONT = "'Anton', 'Arial Black', sans-serif";
 
@@ -1746,12 +1746,12 @@ async function renderSPCMap() {
   };
 
   // Compute adaptive font size for a state based on its bounding box
+  // Anton is a condensed font — actual char width ~0.45× font size
+  // Use 88% of state width so label fits with small padding
   const stateFontSize = (sw, sh, chars) => {
-    // Anton font: ~0.58 width-to-height ratio per char
-    // Use tighter multiplier (0.62) to leave padding between states
-    const fitW = (sw * 0.62) / (chars * 0.58);
-    const fitH = sh * 0.50;
-    return Math.min(fontSize, Math.max(8, Math.floor(Math.min(fitW, fitH))));
+    const fitW = (sw * 0.88) / (chars * 0.45);
+    const fitH = sh * 0.60;
+    return Math.min(fontSize, Math.max(10, Math.floor(Math.min(fitW, fitH))));
   };
 
   states.forEach(d => {
