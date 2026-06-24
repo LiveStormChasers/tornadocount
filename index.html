@@ -411,6 +411,31 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
           title="Export map as high-resolution PNG">
           ⬇ Export PNG
         </button>
+        <span onclick="document.getElementById('override-panel').style.display=document.getElementById('override-panel').style.display==='none'?'flex':'none'"
+          style="font-size:11px;padding:5px 10px;border:1px solid var(--t3);color:var(--t3);cursor:pointer;font-family:var(--mono);border-radius:4px;user-select:none;flex-shrink:0"
+          id="override-toggle" title="Manually override state counts">
+          ✏ Override
+        </span>
+        <span id="centroid-edit-btn" onclick="toggleCentroidEdit()"
+          style="font-size:11px;padding:5px 10px;border:1px solid var(--t3);color:var(--t3);cursor:pointer;font-family:var(--mono);border-radius:4px;user-select:none;flex-shrink:0"
+          title="Click on a state to reposition its label">
+          📍 Edit Labels
+        </span>
+      </div>
+      <div id="override-panel" style="display:none;align-items:center;gap:6px;padding:6px 0;flex-wrap:wrap">
+        <input id="ov-state" placeholder="ST" maxlength="2"
+          style="width:38px;padding:4px 6px;background:var(--c1);border:1px solid var(--t3);color:var(--t1);font-family:var(--mono);font-size:11px;text-transform:uppercase;border-radius:3px"/>
+        <input id="ov-count" placeholder="count" type="number" min="0"
+          style="width:65px;padding:4px 6px;background:var(--c1);border:1px solid var(--t3);color:var(--t1);font-family:var(--mono);font-size:11px;border-radius:3px"/>
+        <button onclick="applyOverride()"
+          style="padding:4px 10px;border:none;background:var(--grn);color:#000;font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer;border-radius:3px">
+          Apply
+        </button>
+        <button onclick="clearOverrides()"
+          style="padding:4px 10px;border:none;background:transparent;border:1px solid var(--t3);color:var(--t3);font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:3px">
+          Clear all
+        </button>
+        <span id="override-list" style="font-size:10px;color:var(--amb);font-family:var(--mono)"></span>
       </div>
     </div>
     <div id="spc-map-wrap" style="width:100%;background:var(--bg2);border-radius:10px;border:1px solid var(--bdr);overflow:hidden;position:relative">
@@ -513,6 +538,9 @@ const PG  = 15;
 
 /* ── STATE ─────────────────────────────────────────── */
 let datEvs = [], iemCnt = null, spcData = null, spcRawData = null, okData = null, stMap = {}, sortMode = 'count', curPg = 1, preset = 'ytd';
+let _stOverrides = {}; // manual state count overrides for map export
+let _centroidOverrides = {}; // user-clicked centroid positions per state
+try { _centroidOverrides = JSON.parse(localStorage.getItem('tornadomap_centroids') || '{}'); } catch(e) {}
 let vtecData = { warn: {}, twatch: {}, swatch: {} }, activeTab = 'dat';
 
 /* ── DATES ─────────────────────────────────────────── */
@@ -1219,6 +1247,59 @@ function generateMapChartJSON(byState, title, ranges) {
   });
 }
 
+let _centroidEditMode = false;
+
+function toggleCentroidEdit() {
+  _centroidEditMode = !_centroidEditMode;
+  const btn = document.getElementById('centroid-edit-btn');
+  const svg = document.getElementById('spc-map-svg');
+  if (_centroidEditMode) {
+    btn.style.background = 'var(--amb)';
+    btn.style.color = '#000';
+    btn.style.borderColor = 'var(--amb)';
+    btn.textContent = '📍 Click a State';
+    if (svg) svg.style.cursor = 'crosshair';
+  } else {
+    btn.style.background = 'transparent';
+    btn.style.color = 'var(--t3)';
+    btn.style.borderColor = 'var(--t3)';
+    btn.textContent = '📍 Edit Labels';
+    if (svg) svg.style.cursor = '';
+  }
+}
+
+function clearCentroidOverrides() {
+  _centroidOverrides = {};
+  localStorage.removeItem('tornadomap_centroids');
+  renderSPCMap();
+}
+
+function applyOverride() {
+  const st = document.getElementById('ov-state')?.value?.trim().toUpperCase();
+  const ct = parseInt(document.getElementById('ov-count')?.value, 10);
+  if (!st || st.length !== 2 || isNaN(ct) || ct < 0) return;
+  _stOverrides[st] = ct;
+  document.getElementById('ov-state').value = '';
+  document.getElementById('ov-count').value = '';
+  updateOverrideList();
+  renderSPCMap();
+}
+
+function clearOverrides() {
+  _stOverrides = {};
+  updateOverrideList();
+  renderSPCMap();
+}
+
+function updateOverrideList() {
+  const el = document.getElementById('override-list');
+  if (!el) return;
+  const entries = Object.entries(_stOverrides);
+  el.textContent = entries.length ? entries.map(([k,v])=>`${k}:${v}`).join(' · ') : '';
+  document.getElementById('override-toggle').style.color = entries.length ? 'var(--amb)' : 'var(--t3)';
+  document.getElementById('override-toggle').style.borderColor = entries.length ? 'var(--amb)' : 'var(--t3)';
+}
+
 async function exportMapPNG() {
   const svg   = document.getElementById('spc-map-svg');
   const btn   = document.getElementById('map-export-btn');
@@ -1484,6 +1565,11 @@ async function renderSPCMap() {
     Object.assign(byState, window._efHistByState);
   }
 
+  // Apply manual overrides
+  if (Object.keys(_stOverrides).length) {
+    Object.assign(byState, _stOverrides);
+  }
+
   if (!Object.keys(byState).length) return;
 
   section.style.display = 'block';
@@ -1532,8 +1618,11 @@ async function renderSPCMap() {
         });
         if (okData?.total > 0) stMap['OK'] = okData?.total;
         console.log(`[GeoCorrect] Fixed ${corrected} events. IN=${stMap['IN']}, IL=${stMap['IL']}, MI=${stMap['MI']}, OK=${stMap['OK']}`);
-        // Re-render map if in DAT mode
-        if (_mapMode === 'dat') renderSPCMap();
+        // Re-render map — return immediately so this render doesn't
+        // also draw labels (second render will handle everything cleanly)
+        window._geoStateCorrected = true;
+        renderSPCMap();
+        return;
       }
       window._geoStateCorrected = true;
     } catch(e) { console.warn('[GeoCorrect] Failed:', e.message); }
@@ -1574,6 +1663,27 @@ async function renderSPCMap() {
 
   svgEl.selectAll('*').remove();
 
+  // Centroid edit mode: click on SVG to record new label position for a state
+  svgEl.on('click.centroid', function(event) {
+    if (!_centroidEditMode) return;
+    const [mx, my] = d3.pointer(event, this);
+    // Find which state was clicked using point-in-polygon
+    let clickedAbbr = null;
+    states.forEach(d => {
+      const abbr = FIPS[String(d.id).padStart(2,'0')];
+      if (abbr && path.contains(d, [mx, my])) clickedAbbr = abbr;
+    });
+    if (!clickedAbbr) return;
+    // Compute offset from computed centroid
+    const d = states.find(s => FIPS[String(s.id).padStart(2,'0')] === clickedAbbr);
+    if (!d) return;
+    const c = path.centroid(d);
+    _centroidOverrides[clickedAbbr] = [Math.round(mx - c[0]), Math.round(my - c[1])];
+    localStorage.setItem('tornadomap_centroids', JSON.stringify(_centroidOverrides));
+    console.log('[Centroid] ' + clickedAbbr + ' offset set to', _centroidOverrides[clickedAbbr]);
+    renderSPCMap();
+  });
+
   const g = svgEl.append('g');
 
   g.selectAll('path')
@@ -1609,7 +1719,9 @@ async function renderSPCMap() {
   }
   await new Promise(r => setTimeout(r, 400)); // let font load
 
-  const fontSize = Math.max(16, W / 48) + 3;
+  // EF-hist labels are 4 chars wide ("EF-5") vs 1-3 for other modes
+  const _baseFontSize = Math.max(16, W / 48) + 3;
+  const fontSize = _mapMode === 'efhist' ? Math.floor(_baseFontSize * 0.82) : _baseFontSize;
   const FONT = "'Anton', 'Arial Black', sans-serif";
 
   // Small NE states: use ABSOLUTE label positions (as % of W/H) to
@@ -1626,6 +1738,7 @@ async function renderSPCMap() {
     'DE': { ax:819.7, ay:270.3, lx:897.9, ly:304.1 },
     'MD': { ax:804.2, ay:270.3, lx:892.7, ly:340.2 },
     'DC': { ax:793.8, ay:275.4, lx:883.3, ly:370.1 },
+    'VA': { ax:800.0, ay:302.0, lx:921.0, ly:408.0 },
   };
   const absScaleX = 1, absScaleY = 1; // fixed coordinate space — no scaling needed // positions already in fractions
   const CALLOUTS = {};
@@ -1637,24 +1750,35 @@ async function renderSPCMap() {
     'FL': [26,  22],  // user-confirmed
     'CA': [-6,   9],  // user-confirmed
     'ID': [-2,  14],  // user-confirmed
+    'MS': [  0,   8], // nudge down — narrow state, avoid overlap with AL/LA
+    'SD': [ -5,   5], // nudge to avoid ND overlap
   };
 
-  const addLabel = (x, y, text, anchor='middle') => {
+  const addLabel = (x, y, text, anchor='middle', fs=fontSize) => {
     const g = svgEl.append('g').attr('pointer-events','none');
     g.append('text')
       .attr('x', x).attr('y', y)
       .attr('text-anchor', anchor)
-      .attr('font-size', fontSize).attr('font-family', FONT)
+      .attr('font-size', fs).attr('font-family', FONT)
       .attr('fill', 'none')
-      .attr('stroke', '#000').attr('stroke-width', fontSize * 0.22)
+      .attr('stroke', '#000').attr('stroke-width', fs * 0.22)
       .attr('stroke-linejoin', 'round').attr('stroke-linecap', 'round')
       .text(text);
     g.append('text')
       .attr('x', x).attr('y', y)
       .attr('text-anchor', anchor)
-      .attr('font-size', fontSize).attr('font-family', FONT)
+      .attr('font-size', fs).attr('font-family', FONT)
       .attr('fill', '#ffffff')
       .text(text);
+  };
+
+  // Compute adaptive font size for a state based on its bounding box
+  const stateFontSize = (sw, sh, chars) => {
+    // Anton font: ~0.58 width-to-height ratio per char
+    // Use tighter multiplier (0.62) to leave padding between states
+    const fitW = (sw * 0.62) / (chars * 0.58);
+    const fitH = sh * 0.50;
+    return Math.min(fontSize, Math.max(8, Math.floor(Math.min(fitW, fitH))));
   };
 
   states.forEach(d => {
@@ -1664,15 +1788,20 @@ async function renderSPCMap() {
     let   c      = path.centroid(d);
     if (!c || isNaN(c[0])) return;
 
-    // Apply manual centroid correction
+    // Apply manual centroid correction (hardcoded)
     if (CENTROID_FIX[abbr]) {
       c = [c[0] + CENTROID_FIX[abbr][0], c[1] + CENTROID_FIX[abbr][1]];
+    }
+    // Apply user-clicked centroid override (takes precedence)
+    if (_centroidOverrides[abbr]) {
+      c = [c[0] + _centroidOverrides[abbr][0], c[1] + _centroidOverrides[abbr][1]];
     }
 
     const bounds = path.bounds(d);
     const sw = bounds[1][0] - bounds[0][0];
     const sh = bounds[1][1] - bounds[0][1];
     const isSmall = sw < fontSize * 2.2 || sh < fontSize * 1.2;
+    const adaptFs = ABS_LABELS[abbr] ? fontSize : stateFontSize(sw, sh, label.length);
 
     if (ABS_LABELS[abbr]) {
       // Use saved position if user has dragged, otherwise use default
@@ -1774,7 +1903,7 @@ async function renderSPCMap() {
         .attr('pointer-events', 'none');
       addLabel(lx, ly + fontSize * 0.38, label);
     } else {
-      addLabel(c[0], c[1] + fontSize * 0.38, label);
+      addLabel(c[0], c[1] + adaptFs * 0.38, label, 'middle', adaptFs);
     }
   });
 
