@@ -1694,7 +1694,7 @@ async function renderSPCMap() {
   await new Promise(r => setTimeout(r, 400)); // let font load
 
   // EF-hist labels are 4 chars wide ("EF-5") vs 1-3 for other modes
-  const _baseFontSize = Math.max(16, W / 48) + 3;
+  const _baseFontSize = Math.max(18, W / 48) + 5; // +2px from original
   const fontSize = _mapMode === 'efhist' ? Math.floor(_baseFontSize * 0.82) : _baseFontSize;
   const FONT = "'Anton', 'Arial Black', sans-serif";
 
@@ -1725,7 +1725,7 @@ async function renderSPCMap() {
     'ID': [-2,  14],  // user-confirmed
     'MS': [  0,   8], // nudge down — narrow state, avoid overlap with AL/LA
     'SD': [ -5,   5], // nudge to avoid ND overlap
-    'VA': [-36,   9], // user-confirmed click
+    'VA': [ 10,   5], // push east into main VA body away from WV panhandle
   };
 
   const addLabel = (x, y, text, anchor='middle', fs=fontSize) => {
