@@ -628,12 +628,12 @@ async function fetchAll() {
   renderAll(s,e);
   const parts=[];
   parts.push(dOk  ? `DAT: ${datEvs.length} surveys`              : 'DAT: unavailable');
-  parts.push(iOk  ? `IEM: ${iemCnt.total} LSR reports`            : 'IEM: unavailable');
+  parts.push(iOk  ? `IEM: ${iemCnt?.total} LSR reports`            : 'IEM: unavailable');
   parts.push(spcData ? `SPC: ${spcData.total} filtered · ${spcRawData?.total ?? '?'} raw tornado reports` : 'SPC: unavailable');
-  parts.push(okOk ? `OUN: ${okData.total} OK tornadoes`          : 'OUN: unavailable');
-  if (vtecData.warn)   parts.push(`Warnings: ${vtecData.warn.total}`);
-  if (vtecData.twatch) parts.push(`TOR Watches: ${vtecData.twatch.total}`);
-  if (vtecData.swatch) parts.push(`SVR Watches: ${vtecData.swatch.total}`);
+  parts.push(okOk ? `OUN: ${okData?.total} OK tornadoes`          : 'OUN: unavailable');
+  if (vtecData.warn)   parts.push(`Warnings: ${vtecData.warn?.total}`);
+  if (vtecData.twatch) parts.push(`TOR Watches: ${vtecData.twatch?.total}`);
+  if (vtecData.swatch) parts.push(`SVR Watches: ${vtecData.swatch?.total}`);
   setStatus(dOk&&iOk?'ok':'warn', parts.join('  ·  '));
 }
 
@@ -1042,7 +1042,7 @@ function renderAll(s,e) {
   const okEl  = document.getElementById('h-ok');
   const okSub = document.getElementById('h-ok-sub');
   if (okData) {
-    animNum(okEl, okData.total);
+    animNum(okEl, okData?.total);
     okEl.style.color = 'var(--amb)';
     // Show EF breakdown from OUN as subtitle
     const efParts = ['EF0','EF1','EF2','EF3','EF4','EF5']
@@ -1057,7 +1057,7 @@ function renderAll(s,e) {
   const casEl=document.getElementById('h-cas');
   casEl.textContent=`${inj.toLocaleString()} / ${fat.toLocaleString()}`;
   casEl.style.color=fat>0?'var(--red)':'var(--t1)';
-  const okAdj = (okData && okData.total > 0) ? ` · OK adjusted to OUN (${okData.total})` : '';
+  const okAdj = (okData && okData.total > 0) ? ` · OK adjusted to OUN (${okData?.total})` : '';
   document.getElementById('h-range').textContent=`${fmtD(s)} → ${fmtD(e)}${okAdj}`;
   document.getElementById('ts-lbl').textContent='Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 
@@ -1068,7 +1068,7 @@ function renderAll(s,e) {
   document.getElementById('efU').textContent=((ef['EFU']||0)+(ef['UNK']||0)).toLocaleString();
 
   document.getElementById('d2-dat').textContent=total.toLocaleString();
-  document.getElementById('d2-iem').textContent=iemCnt!==null?iemCnt.total.toLocaleString():'N/A';
+  document.getElementById('d2-iem').textContent=iemCnt!==null?iemCnt?.total?.toLocaleString():'N/A';
   document.getElementById('dual').style.display='grid';
 
   // Warning summary strip
@@ -1076,12 +1076,12 @@ function renderAll(s,e) {
   if (vtecData.warn || vtecData.twatch || vtecData.swatch) {
     strip.style.display='grid';
     if (vtecData.warn) {
-      animNum(document.getElementById('ws-tw'), vtecData.warn.total);
+      animNum(document.getElementById('ws-tw'), vtecData.warn?.total);
       document.getElementById('ws-pds').textContent = (vtecData.warn.totalPDS || 0).toLocaleString();
       document.getElementById('ws-emg').textContent = (vtecData.warn.totalEmergency || 0).toLocaleString();
     }
-    if (vtecData.twatch) animNum(document.getElementById('ws-ta'), vtecData.twatch.total);
-    if (vtecData.swatch) animNum(document.getElementById('ws-sv'), vtecData.swatch.total);
+    if (vtecData.twatch) animNum(document.getElementById('ws-ta'), vtecData.twatch?.total);
+    if (vtecData.swatch) animNum(document.getElementById('ws-sv'), vtecData.swatch?.total);
   }
 
   // Override Oklahoma's DAT count with the more accurate OUN count when available
@@ -1089,7 +1089,7 @@ function renderAll(s,e) {
   let adjustedTotal = total;
   if (okData && okData.total > 0) {
     const datOkCount = stMap['OK'] || 0;
-    const ounOkCount = okData.total;
+    const ounOkCount = okData?.total;
     stMap['OK'] = ounOkCount;
     // Adjust the national total by the difference
     adjustedTotal = total - datOkCount + ounOkCount;
@@ -1471,8 +1471,8 @@ async function renderSPCMap() {
     ? (window._efHistByState || {})
     : (spcData?.byState || {});
   const byState = {..._rawByState};
-  if (_mapMode === 'spc' && okData?.total > 0) byState['OK'] = okData.total;
-  if (_mapMode === 'dat' && okData?.total > 0) byState['OK'] = okData.total;
+  if (_mapMode === 'spc' && okData?.total > 0) byState['OK'] = okData?.total;
+  if (_mapMode === 'dat' && okData?.total > 0) byState['OK'] = okData?.total;
   const MAP_RANGES = _mapMode === 'warn' ? WARN_RANGES
     : _mapMode === 'efhist' ? EF_HIST_RANGES
     : SPC_RANGES;
@@ -1530,7 +1530,7 @@ async function renderSPCMap() {
           const st = ev._state;
           if (st) stMap[st] = (stMap[st]||0) + 1;
         });
-        if (okData?.total > 0) stMap['OK'] = okData.total;
+        if (okData?.total > 0) stMap['OK'] = okData?.total;
         console.log(`[GeoCorrect] Fixed ${corrected} events. IN=${stMap['IN']}, IL=${stMap['IL']}, MI=${stMap['MI']}, OK=${stMap['OK']}`);
         // Re-render map if in DAT mode
         if (_mapMode === 'dat') renderSPCMap();
