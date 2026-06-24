@@ -349,20 +349,19 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
 
   <!-- ── SPC Tornado Map ──────────────────────────────────────────────── -->
   <div id="spc-map-section" style="display:none;margin-bottom:24px">
-    <!-- Row 1: Fixed controls row — never reflows regardless of legend size -->
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:nowrap">
-      <!-- Left: title + subtitle -->
-      <div style="flex-shrink:0;min-width:0">
-        <h2 style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--t2);margin:0;font-weight:500;white-space:nowrap">
-          Tornado Reports by State — Map View
-        </h2>
-        <div id="map-subtitle" style="font-size:11px;color:var(--t3);margin-top:3px;white-space:nowrap">
-          SPC preliminary filtered reports · hover a state for details
-        </div>
+    <!-- Row 1: Title + subtitle -->
+    <div style="margin-bottom:8px">
+      <h2 style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--t2);margin:0;font-weight:500">
+        Tornado Reports by State — Map View
+      </h2>
+      <div id="map-subtitle" style="font-size:11px;color:var(--t3);margin-top:3px">
+        SPC preliminary filtered reports · hover a state for details
       </div>
-      <!-- Right: mode tabs + action buttons — all in one fixed row -->
-      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-        <!-- Mode tabs -->
+    </div>
+    <!-- Row 2: Mode tabs + action buttons -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:nowrap">
+      <!-- placeholder for old right div opening -->
+      <!-- Mode tabs -->
         <div style="display:flex;align-items:center;background:var(--bg3);border:1px solid var(--bdr);border-radius:6px;overflow:hidden">
           <button id="map-toggle-spc" onclick="setMapMode('spc')"
             style="font-size:11px;padding:5px 11px;border:none;background:var(--grn);color:#000;cursor:pointer;font-family:var(--mono);font-weight:700;transition:all .2s;white-space:nowrap">
@@ -419,11 +418,10 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
           title="Manually override state counts for export">
           ✏ Override
         </button>
-      </div>
     </div>
-    <!-- Row 2: Legend — variable width, isolated so it never affects Row 1 -->
+    <!-- Row 3: Legend -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;min-height:22px" id="map-legend"></div>
-    <!-- Row 3: Override panel — hidden by default -->
+    <!-- Row 4: Override panel — hidden by default -->
     <div id="override-panel" style="display:none;align-items:center;gap:8px;margin-bottom:10px;padding:10px 14px;background:var(--bg3);border:1px solid rgba(255,179,0,.3);border-radius:8px;flex-wrap:wrap">
       <span style="font-size:11px;color:var(--amb);font-family:var(--mono);font-weight:600;white-space:nowrap">✏ Override State Count:</span>
       <div style="display:flex;align-items:center;gap:6px">
