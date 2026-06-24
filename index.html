@@ -1769,7 +1769,7 @@ async function renderSPCMap() {
     const bounds = path.bounds(d);
     const sw = bounds[1][0] - bounds[0][0];
     const sh = bounds[1][1] - bounds[0][1];
-    const isSmall = sw < fontSize * 2.2 || sh < fontSize * 1.2;
+    const isSmall = sw < fontSize * 1.8 || sh < fontSize * 0.9; // tighter threshold — avoids catching IN, WI etc.
     const adaptFs = ABS_LABELS[abbr] ? fontSize : stateFontSize(sw, sh, label.length);
 
     if (ABS_LABELS[abbr]) {
