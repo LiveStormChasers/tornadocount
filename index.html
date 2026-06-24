@@ -222,7 +222,7 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
     </div>
   </div>
   <div class="top-r">
-    <div class="live"><div class="dot"></div>LIVE</div>
+    <div class="live"><div class="dot"></div>LIVE<span id="build-ver" style="font-size:9px;opacity:.5;margin-left:6px;letter-spacing:.04em"></span></div>
     <div class="tslbl" id="ts-lbl"></div>
   </div>
 </header>
@@ -541,6 +541,7 @@ const WORKER = 'https://oktornadocount.livestormchaser.workers.dev';
 const PG  = 15;
 
 /* ── STATE ─────────────────────────────────────────── */
+const BUILD = 'v1.0.260624.2049';
 let datEvs = [], iemCnt = null, spcData = null, spcRawData = null, okData = null, stMap = {}, sortMode = 'count', curPg = 1, preset = 'ytd';
 let _stOverrides = {}; // manual state count overrides for map export
 let vtecData = { warn: {}, twatch: {}, swatch: {} }, activeTab = 'dat';
