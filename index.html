@@ -1471,6 +1471,9 @@ async function loadEFHistData() {
   // HI Feb 11 2009 Kapolei: NWS Honolulu rated EF1 but SPC CSV shows EF0
   // Source: https://en.wikipedia.org/wiki/List_of_Hawaii_tornadoes
   if (!maxEF['HI'] || maxEF['HI'] < 1) maxEF['HI'] = 1;
+  // WV: EF-3 confirmed Sep 16 2010 (Wood/Wirt) and Mar 2 2012 (Lincoln/Mingo)
+  // Source: https://en.wikipedia.org/wiki/List_of_West_Virginia_tornadoes
+  if (!maxEF['WV'] || maxEF['WV'] < 3) maxEF['WV'] = 3;
 
   window._efHistByState = maxEF;
   console.log('[EF Hist] Loaded', Object.keys(maxEF).length, 'states (2007–2026)');
