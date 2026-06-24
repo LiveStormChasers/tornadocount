@@ -349,34 +349,36 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
 
   <!-- ── SPC Tornado Map ──────────────────────────────────────────────── -->
   <div id="spc-map-section" style="display:none;margin-bottom:24px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:12px">
-      <div>
-        <h2 style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--t2);margin:0;font-weight:500">
+    <!-- Row 1: Fixed controls row — never reflows regardless of legend size -->
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:nowrap">
+      <!-- Left: title + subtitle -->
+      <div style="flex-shrink:0;min-width:0">
+        <h2 style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--t2);margin:0;font-weight:500;white-space:nowrap">
           Tornado Reports by State — Map View
         </h2>
-        <div style="font-size:11px;color:var(--t3);margin-top:4px">
+        <div id="map-subtitle" style="font-size:11px;color:var(--t3);margin-top:3px;white-space:nowrap">
           SPC preliminary filtered reports · hover a state for details
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:8px" id="map-legend"></div>
-        <!-- Map data toggle -->
-        <div style="display:flex;align-items:center;background:var(--bg3);border:1px solid var(--bdr);border-radius:6px;overflow:hidden;flex-shrink:0">
+      <!-- Right: mode tabs + action buttons — all in one fixed row -->
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <!-- Mode tabs -->
+        <div style="display:flex;align-items:center;background:var(--bg3);border:1px solid var(--bdr);border-radius:6px;overflow:hidden">
           <button id="map-toggle-spc" onclick="setMapMode('spc')"
-            style="font-size:11px;padding:5px 12px;border:none;background:var(--grn);color:#000;cursor:pointer;font-family:var(--mono);font-weight:600;transition:all .2s">
+            style="font-size:11px;padding:5px 11px;border:none;background:var(--grn);color:#000;cursor:pointer;font-family:var(--mono);font-weight:700;transition:all .2s;white-space:nowrap">
             SPC Reports
           </button>
           <button id="map-toggle-dat" onclick="setMapMode('dat')"
-            style="font-size:11px;padding:5px 12px;border:none;background:transparent;color:var(--t3);cursor:pointer;font-family:var(--mono);transition:all .2s">
+            style="font-size:11px;padding:5px 11px;border:none;background:transparent;color:var(--t3);cursor:pointer;font-family:var(--mono);transition:all .2s;white-space:nowrap">
             DAT Confirmed
           </button>
           <button id="map-toggle-warn" onclick="setMapMode('warn')"
-            style="font-size:11px;padding:5px 12px;border:none;background:transparent;color:var(--t3);cursor:pointer;font-family:var(--mono);transition:all .2s">
+            style="font-size:11px;padding:5px 11px;border:none;background:transparent;color:var(--t3);cursor:pointer;font-family:var(--mono);transition:all .2s;white-space:nowrap">
             Warnings
           </button>
           <button id="map-toggle-efhist" onclick="setMapMode('efhist')"
-            style="font-size:11px;padding:5px 12px;border:none;background:transparent;color:var(--t3);cursor:pointer;font-family:var(--mono);transition:all .2s">
-            Max EF (Historical)
+            style="font-size:11px;padding:5px 11px;border:none;background:transparent;color:var(--t3);cursor:pointer;font-family:var(--mono);transition:all .2s;white-space:nowrap">
+            Max EF (Hist.)
           </button>
         </div>
         <!-- MapChart copy dropdown -->
@@ -411,28 +413,36 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
           title="Export map as high-resolution PNG">
           ⬇ Export PNG
         </button>
-        <span onclick="document.getElementById('override-panel').style.display=document.getElementById('override-panel').style.display==='none'?'flex':'none'"
-          style="font-size:11px;padding:5px 10px;border:1px solid var(--t3);color:var(--t3);cursor:pointer;font-family:var(--mono);border-radius:4px;user-select:none;flex-shrink:0"
-          id="override-toggle" title="Manually override state counts">
+        <!-- Override button -->
+        <button id="override-toggle" onclick="toggleOverridePanel()"
+          style="font-size:11px;padding:5px 11px;border-radius:6px;border:1px solid rgba(255,179,0,.4);background:rgba(255,179,0,.1);color:var(--amb);cursor:pointer;font-family:var(--mono);font-weight:600;white-space:nowrap;transition:all .2s"
+          title="Manually override state counts for export">
           ✏ Override
-        </span>
-
+        </button>
       </div>
-      <div id="override-panel" style="display:none;align-items:center;gap:6px;padding:6px 0;flex-wrap:wrap">
+    </div>
+    <!-- Row 2: Legend — variable width, isolated so it never affects Row 1 -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;min-height:22px" id="map-legend"></div>
+    <!-- Row 3: Override panel — hidden by default -->
+    <div id="override-panel" style="display:none;align-items:center;gap:8px;margin-bottom:10px;padding:10px 14px;background:var(--bg3);border:1px solid rgba(255,179,0,.3);border-radius:8px;flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--amb);font-family:var(--mono);font-weight:600;white-space:nowrap">✏ Override State Count:</span>
+      <div style="display:flex;align-items:center;gap:6px">
         <input id="ov-state" placeholder="ST" maxlength="2"
-          style="width:38px;padding:4px 6px;background:var(--c1);border:1px solid var(--t3);color:var(--t1);font-family:var(--mono);font-size:11px;text-transform:uppercase;border-radius:3px"/>
+          style="width:42px;padding:5px 8px;background:var(--c1);border:1px solid rgba(255,179,0,.4);color:var(--t1);font-family:var(--mono);font-size:12px;text-transform:uppercase;border-radius:5px;text-align:center;font-weight:700"/>
+        <span style="color:var(--t3);font-size:12px">=</span>
         <input id="ov-count" placeholder="count" type="number" min="0"
-          style="width:65px;padding:4px 6px;background:var(--c1);border:1px solid var(--t3);color:var(--t1);font-family:var(--mono);font-size:11px;border-radius:3px"/>
+          style="width:70px;padding:5px 8px;background:var(--c1);border:1px solid rgba(255,179,0,.4);color:var(--t1);font-family:var(--mono);font-size:12px;border-radius:5px"/>
         <button onclick="applyOverride()"
-          style="padding:4px 10px;border:none;background:var(--grn);color:#000;font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer;border-radius:3px">
+          style="padding:5px 14px;border:none;background:var(--grn);color:#000;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;border-radius:5px">
           Apply
         </button>
         <button onclick="clearOverrides()"
-          style="padding:4px 10px;border:none;background:transparent;border:1px solid var(--t3);color:var(--t3);font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:3px">
-          Clear all
+          style="padding:5px 12px;border:1px solid var(--t3);background:transparent;color:var(--t3);font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:5px">
+          Clear All
         </button>
-        <span id="override-list" style="font-size:10px;color:var(--amb);font-family:var(--mono)"></span>
       </div>
+      <span id="override-list" style="font-size:11px;color:var(--amb);font-family:var(--mono);font-weight:600"></span>
+    </div>
     </div>
     <div id="spc-map-wrap" style="width:100%;background:var(--bg2);border-radius:10px;border:1px solid var(--bdr);overflow:hidden;position:relative">
       <div id="spc-map-loading" style="padding:40px;text-align:center;color:var(--t3);font-size:13px">Loading map…</div>
@@ -1241,6 +1251,15 @@ function generateMapChartJSON(byState, title, ranges) {
   });
 }
 
+function toggleOverridePanel() {
+  const panel = document.getElementById('override-panel');
+  const btn   = document.getElementById('override-toggle');
+  const open  = panel.style.display === 'flex';
+  panel.style.display = open ? 'none' : 'flex';
+  btn.style.background = open ? 'rgba(255,179,0,.1)' : 'rgba(255,179,0,.25)';
+  btn.style.borderColor = open ? 'rgba(255,179,0,.4)' : 'rgba(255,179,0,.7)';
+}
+
 function applyOverride() {
   const st = document.getElementById('ov-state')?.value?.trim().toUpperCase();
   const ct = parseInt(document.getElementById('ov-count')?.value, 10);
@@ -1263,8 +1282,15 @@ function updateOverrideList() {
   if (!el) return;
   const entries = Object.entries(_stOverrides);
   el.textContent = entries.length ? entries.map(([k,v])=>`${k}:${v}`).join(' · ') : '';
-  document.getElementById('override-toggle').style.color = entries.length ? 'var(--amb)' : 'var(--t3)';
-  document.getElementById('override-toggle').style.borderColor = entries.length ? 'var(--amb)' : 'var(--t3)';
+  // Override button highlights when active
+  const ovBtn = document.getElementById('override-toggle');
+  if (ovBtn) {
+    ovBtn.style.color = 'var(--amb)';
+    if (entries.length) {
+      ovBtn.style.background = 'rgba(255,179,0,.25)';
+      ovBtn.style.borderColor = 'rgba(255,179,0,.7)';
+    }
+  }
 }
 
 async function exportMapPNG() {
@@ -1497,7 +1523,7 @@ async function setMapMode(mode) {
   }
   // Update subtitle
   const sub = document.querySelector('#spc-map-section h2 + div');
-  if (sub) sub.firstChild.textContent = mode === 'warn'
+  const mapSub = document.getElementById('map-subtitle'); if (mapSub) mapSub.textContent = mode === 'warn'
     ? 'IEM VTEC tornado warnings · hover a state for details'
     : mode === 'dat'
     ? 'NWS DAT confirmed surveys · hover a state for details'
