@@ -541,7 +541,7 @@ const WORKER = 'https://oktornadocount.livestormchaser.workers.dev';
 const PG  = 15;
 
 /* ── STATE ─────────────────────────────────────────── */
-const BUILD = 'v1.0.260624.2105';
+const BUILD = 'v1.0.260624.2117';
 let datEvs = [], iemCnt = null, spcData = null, spcRawData = null, okData = null, stMap = {}, sortMode = 'count', curPg = 1, preset = 'ytd';
 let _stOverrides = {}; // manual state count overrides for map export
 let vtecData = { warn: {}, twatch: {}, swatch: {} }, activeTab = 'dat';
@@ -1719,7 +1719,7 @@ async function renderSPCMap() {
 
   // Manual centroid corrections for oddly shaped states
   const CENTROID_FIX = {
-    'VA': [ 11,  -4], // user-confirmed via text preview
+    'VA': [  6,   2], // user-confirmed via live drag
     'LA': [-12, -10], // user-confirmed
     'MI': [13,  23],  // user-confirmed
     'FL': [26,  22],  // user-confirmed
