@@ -519,7 +519,7 @@ let vtecData = { warn: {}, twatch: {}, swatch: {} }, activeTab = 'dat';
 const fmt  = d => d.toISOString().split('T')[0];
 const now  = () => new Date();
 const ago  = n => { const d=new Date(); d.setDate(d.getDate()-n); return d; };
-const ytd  = () => { const d=new Date(); d.setMonth(0,1); return d; };
+const ytd  = () => new Date(new Date().getFullYear(), 0, 1); // midnight local Jan 1
 const yr1  = () => { const d=new Date(); d.setFullYear(d.getFullYear()-1); return d; };
 function getRange() {
   if (preset==='ytd')    return {s:fmt(ytd()),   e:fmt(now())};
@@ -586,7 +586,7 @@ async function fetchAll() {
   const startYear = parseInt(s.split('-')[0]);
   const endYear   = parseInt(e.split('-')[0]);
   const isFullYearRange = s.endsWith('-01-01') && (e >= `${endYear}-12-31` || e >= new Date().toISOString().substring(0,10));
-  const isYTD = s.endsWith('-01-01');
+  const isYTD = preset === 'ytd' || s.endsWith('-01-01');
 
   const [dr, ir, sr, srr, okr, vwr, vtar, vsvr] = await Promise.allSettled([
     fetchDAT(s,e),
