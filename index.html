@@ -416,11 +416,7 @@ code{background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--t2);fon
           id="override-toggle" title="Manually override state counts">
           ✏ Override
         </span>
-        <span id="centroid-edit-btn" onclick="toggleCentroidEdit()"
-          style="font-size:11px;padding:5px 10px;border:1px solid var(--t3);color:var(--t3);cursor:pointer;font-family:var(--mono);border-radius:4px;user-select:none;flex-shrink:0"
-          title="Click on a state to reposition its label">
-          📍 Edit Labels
-        </span>
+
       </div>
       <div id="override-panel" style="display:none;align-items:center;gap:6px;padding:6px 0;flex-wrap:wrap">
         <input id="ov-state" placeholder="ST" maxlength="2"
@@ -539,8 +535,6 @@ const PG  = 15;
 /* ── STATE ─────────────────────────────────────────── */
 let datEvs = [], iemCnt = null, spcData = null, spcRawData = null, okData = null, stMap = {}, sortMode = 'count', curPg = 1, preset = 'ytd';
 let _stOverrides = {}; // manual state count overrides for map export
-let _centroidOverrides = {}; // user-clicked centroid positions per state
-try { _centroidOverrides = JSON.parse(localStorage.getItem('tornadomap_centroids') || '{}'); } catch(e) {}
 let vtecData = { warn: {}, twatch: {}, swatch: {} }, activeTab = 'dat';
 
 /* ── DATES ─────────────────────────────────────────── */
@@ -1247,33 +1241,6 @@ function generateMapChartJSON(byState, title, ranges) {
   });
 }
 
-let _centroidEditMode = false;
-
-function toggleCentroidEdit() {
-  _centroidEditMode = !_centroidEditMode;
-  const btn = document.getElementById('centroid-edit-btn');
-  const svg = document.getElementById('spc-map-svg');
-  if (_centroidEditMode) {
-    btn.style.background = 'var(--amb)';
-    btn.style.color = '#000';
-    btn.style.borderColor = 'var(--amb)';
-    btn.textContent = '📍 Click a State';
-    if (svg) svg.style.cursor = 'crosshair';
-  } else {
-    btn.style.background = 'transparent';
-    btn.style.color = 'var(--t3)';
-    btn.style.borderColor = 'var(--t3)';
-    btn.textContent = '📍 Edit Labels';
-    if (svg) svg.style.cursor = '';
-  }
-}
-
-function clearCentroidOverrides() {
-  _centroidOverrides = {};
-  localStorage.removeItem('tornadomap_centroids');
-  renderSPCMap();
-}
-
 function applyOverride() {
   const st = document.getElementById('ov-state')?.value?.trim().toUpperCase();
   const ct = parseInt(document.getElementById('ov-count')?.value, 10);
@@ -1663,26 +1630,6 @@ async function renderSPCMap() {
 
   svgEl.selectAll('*').remove();
 
-  // Centroid edit mode: click on SVG to record new label position for a state
-  svgEl.on('click.centroid', function(event) {
-    if (!_centroidEditMode) return;
-    const [mx, my] = d3.pointer(event, this);
-    // Find which state was clicked using point-in-polygon
-    let clickedAbbr = null;
-    states.forEach(d => {
-      const abbr = FIPS[String(d.id).padStart(2,'0')];
-      if (abbr && path.contains(d, [mx, my])) clickedAbbr = abbr;
-    });
-    if (!clickedAbbr) return;
-    // Compute offset from computed centroid
-    const d = states.find(s => FIPS[String(s.id).padStart(2,'0')] === clickedAbbr);
-    if (!d) return;
-    const c = path.centroid(d);
-    _centroidOverrides[clickedAbbr] = [Math.round(mx - c[0]), Math.round(my - c[1])];
-    localStorage.setItem('tornadomap_centroids', JSON.stringify(_centroidOverrides));
-    console.log('[Centroid] ' + clickedAbbr + ' offset set to', _centroidOverrides[clickedAbbr]);
-    renderSPCMap();
-  });
 
   const g = svgEl.append('g');
 
@@ -1738,7 +1685,6 @@ async function renderSPCMap() {
     'DE': { ax:819.7, ay:270.3, lx:897.9, ly:304.1 },
     'MD': { ax:804.2, ay:270.3, lx:892.7, ly:340.2 },
     'DC': { ax:793.8, ay:275.4, lx:883.3, ly:370.1 },
-    'VA': { ax:800.0, ay:302.0, lx:921.0, ly:408.0 },
   };
   const absScaleX = 1, absScaleY = 1; // fixed coordinate space — no scaling needed // positions already in fractions
   const CALLOUTS = {};
@@ -1752,6 +1698,7 @@ async function renderSPCMap() {
     'ID': [-2,  14],  // user-confirmed
     'MS': [  0,   8], // nudge down — narrow state, avoid overlap with AL/LA
     'SD': [ -5,   5], // nudge to avoid ND overlap
+    'VA': [-36,   9], // user-confirmed click
   };
 
   const addLabel = (x, y, text, anchor='middle', fs=fontSize) => {
@@ -1791,10 +1738,6 @@ async function renderSPCMap() {
     // Apply manual centroid correction (hardcoded)
     if (CENTROID_FIX[abbr]) {
       c = [c[0] + CENTROID_FIX[abbr][0], c[1] + CENTROID_FIX[abbr][1]];
-    }
-    // Apply user-clicked centroid override (takes precedence)
-    if (_centroidOverrides[abbr]) {
-      c = [c[0] + _centroidOverrides[abbr][0], c[1] + _centroidOverrides[abbr][1]];
     }
 
     const bounds = path.bounds(d);
