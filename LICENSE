@@ -1,8 +1,9 @@
-Copyright (c) 2024 Live Storm Chasers LLC
+Copyright (c) 2026 Live Storm Chasers LLC
 All rights reserved.
 
-This source code is published to be read and learned from. Publication does not
-grant a licence. Reading this code does not entitle you to use it.
+This source is published so that it can be read and learned from. Publication
+grants no licence to use it. Making the code visible is not the same as making
+it free, and nothing in this repository should be read as an offer of one.
 
 You may:
   - read this code
@@ -10,29 +11,38 @@ You may:
   - quote short excerpts when discussing or teaching the techniques in it,
     with attribution
 
-You may NOT, without prior written permission from Live Storm Chasers LLC:
+You may NOT, without prior written permission:
   - use this code, in whole or in substantial part, in any project
   - copy, modify, merge, publish, distribute, sublicense or sell it
   - host, deploy or run it as part of any service, commercial or otherwise
   - incorporate it into another work, including a derivative
 
-Permission is granted case by case and is usually straightforward — ask first
-at https://livestormchasers.com before using anything here.
+Permission is granted case by case and is usually straightforward to obtain.
+Ask first. Describe what you want to do and where the result will be seen.
 
-Where permission is granted, it is granted on attribution terms. Unless a
-written grant says otherwise, the copyright notice and this licence remain in
-the source, the notice at the top of each source file is left intact, and a
-visible credit appears wherever the work is shown, with a link where a link is
-possible. The credit may not be hidden, collapsed behind a menu or rendered
-illegibly, and must not imply endorsement or responsibility by Live Storm
-Chasers LLC. A written grant may add conditions, narrow the scope to a named
-project, set a term, or require a fee. Permission for one project does not
-extend to another and is not transferable. Failing to meet the terms ends the
-permission, and use after that point is unlicensed.
+Where permission is granted, it is granted on terms, and those terms always
+include attribution. Unless the written grant says otherwise:
 
-Nothing here restricts the underlying public data. NWS DAT, SPC, and IEM data
-products are public and this licence makes no claim over them; it covers only
-the code in this repository.
+  - the copyright notice and this licence stay in the source
+  - the notice at the top of each source file is left intact
+  - a visible credit to Live Storm Chasers appears wherever the work is shown,
+    with a link where a link is possible
+  - the credit may not be hidden, collapsed behind a menu or rendered
+    illegibly, and must not imply endorsement by or responsibility of
+    Live Storm Chasers LLC
+
+Further:
+
+  - a written grant may add conditions, narrow the scope to a named project,
+    set a term, or require a fee
+  - permission for one project does not extend to another and is not
+    transferable
+  - failing to meet the terms ends the permission, and use after that point is
+    unlicensed
+
+Nothing here restricts the underlying public data. The NWS DAT, SPC, and IEM
+data products this tool reads are public and this licence makes no claim over
+them; it covers only the code in this repository.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
