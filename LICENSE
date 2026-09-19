@@ -1,0 +1,43 @@
+Copyright (c) 2024 Live Storm Chasers LLC
+All rights reserved.
+
+This source code is published to be read and learned from. Publication does not
+grant a licence. Reading this code does not entitle you to use it.
+
+You may:
+  - read this code
+  - study how it works
+  - quote short excerpts when discussing or teaching the techniques in it,
+    with attribution
+
+You may NOT, without prior written permission from Live Storm Chasers LLC:
+  - use this code, in whole or in substantial part, in any project
+  - copy, modify, merge, publish, distribute, sublicense or sell it
+  - host, deploy or run it as part of any service, commercial or otherwise
+  - incorporate it into another work, including a derivative
+
+Permission is granted case by case and is usually straightforward — ask first
+at https://livestormchasers.com before using anything here.
+
+Where permission is granted, it is granted on attribution terms. Unless a
+written grant says otherwise, the copyright notice and this licence remain in
+the source, the notice at the top of each source file is left intact, and a
+visible credit appears wherever the work is shown, with a link where a link is
+possible. The credit may not be hidden, collapsed behind a menu or rendered
+illegibly, and must not imply endorsement or responsibility by Live Storm
+Chasers LLC. A written grant may add conditions, narrow the scope to a named
+project, set a term, or require a fee. Permission for one project does not
+extend to another and is not transferable. Failing to meet the terms ends the
+permission, and use after that point is unlicensed.
+
+Nothing here restricts the underlying public data. NWS DAT, SPC, and IEM data
+products are public and this licence makes no claim over them; it covers only
+the code in this repository.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
